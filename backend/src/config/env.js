@@ -3,12 +3,12 @@ require('dotenv').config();
 module.exports = {
   port: parseInt(process.env.PORT || '4000', 10),
   frontendUrl: process.env.FRONTEND_URL || 'http://localhost:5173',
-  // frontendUrl: process.env.FRONTEND_URL || 'https://brassleafadmin.easybizcart.com',
+  // frontendUrl: process.env.FRONTEND_URL || 'https://cornerstoneadmin.easybizcart.com',
   customerFrontendUrl:
     process.env.CUSTOMER_FRONTEND_URL ||
     process.env.VITE_CUSTOMER_URL ||
     'http://localhost:5174',
-    //  'https://brassleaf.easybizcart.com',
+    //  'https://cornerstone.easybizcart.com',
   apiPublicUrl:
     process.env.API_PUBLIC_URL ||
     process.env.BACKEND_PUBLIC_URL ||

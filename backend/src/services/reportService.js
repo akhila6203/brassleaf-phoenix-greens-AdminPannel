@@ -1138,161 +1138,6 @@ function drawAddressAndMeta(
       metaY
     ) + 18;
 }
-// function drawAddressAndMeta(
-//   doc,
-//   order,
-//   type
-// ) {
-//   const isInvoice =
-//     type === 'invoice';
-
-//   const billing =
-//     order.billing || {};
-
-//   const shipping =
-//     order.shipping ||
-//     billing;
-
-//   const address =
-//     isInvoice
-//       ? billing
-//       : shipping;
-
-//   const startY = doc.y;
-
-//   const lines =
-//     addressLines(address);
-
-//   doc
-//     .font('Helvetica')
-//     .fontSize(9.5)
-//     .fillColor('#111111');
-
-//   let addressY =
-//     startY;
-
-//   for (const line of lines) {
-//     doc.text(
-//       String(line),
-//       44,
-//       addressY,
-//       {
-//         width: 240,
-//       }
-//     );
-
-//     addressY += 16;
-//   }
-
-//   const metaX = 320;
-
-//   let metaY =
-//     startY;
-
-//   if (
-//     isInvoice &&
-//     order.institution_name
-//   ) {
-//     doc
-//       .font('Helvetica-Bold')
-//       .fontSize(9.5)
-//       .text(
-//         String(
-//           order.institution_name
-//         ).toUpperCase(),
-//         metaX,
-//         metaY,
-//         {
-//           width: 230,
-//         }
-//       );
-
-//     metaY += 19;
-//   }
-
-//   const metaRows =
-//     isInvoice
-//       ? [
-//           [
-//             'Invoice Number',
-//             order.invoice_number ||
-//               '—',
-//           ],
-//           [
-//             'Invoice Date',
-//             pdfDate(
-//               order.invoice_date
-//             ),
-//           ],
-//           [
-//             'Order Number',
-//             order.id,
-//           ],
-//           [
-//             'Order Date',
-//             pdfDate(
-//               order.date_created_gmt
-//             ),
-//           ],
-//           [
-//             'Payment Method',
-//             order.payment_method_title ||
-//               order.payment_method ||
-//               '—',
-//           ],
-//         ]
-//       : [
-//           [
-//             'Order Number',
-//             order.id,
-//           ],
-//           [
-//             'Order Date',
-//             pdfDate(
-//               order.date_created_gmt
-//             ),
-//           ],
-//           [
-//             'Shipping Method',
-//             order.shipping_label ||
-//               'Flat rate',
-//           ],
-//         ];
-
-//   for (
-//     const [label, value]
-//     of metaRows
-//   ) {
-//     doc
-//       .font('Helvetica-Bold')
-//       .fontSize(9)
-//       .text(
-//         `${label}:`,
-//         metaX,
-//         metaY,
-//         {
-//           width: 95,
-//           continued: true,
-//         }
-//       )
-//       .font('Helvetica')
-//       .text(
-//         ` ${value}`,
-//         {
-//           width: 135,
-//         }
-//       );
-
-//     metaY += 17;
-//   }
-
-//   doc.y =
-//     Math.max(
-//       addressY,
-//       metaY
-//     ) + 20;
-// }
-
 function drawItemsHeader(
   doc,
   type
@@ -1307,24 +1152,23 @@ function drawItemsHeader(
 
   const y = doc.y;
 
-  doc
-    .rect(
-      44,
-      y,
-      507,
-      28
-    )
-    .fill('#000000');
+  /* =====================================================
+     HEADER TEXT
+     - No black background
+     - Black text
+  ===================================================== */
 
   doc
-    .fillColor('#ffffff')
+    .fillColor('#111111')
     .font('Helvetica-Bold')
     .fontSize(9);
+
+  /* PRODUCT */
 
   doc.text(
     'Product',
     55,
-    y + 9,
+    y + 7,
     {
       width:
         isInvoice
@@ -1332,59 +1176,64 @@ function drawItemsHeader(
           : 390,
     }
   );
-doc.text(
-  'Quantity',
-  isInvoice
-    ? 365
-    : 445,
-  y + 9,
-  {
-    width: 60,
-    align: 'right',
-  }
-);
 
-if (isInvoice) {
+  /* QUANTITY */
+
   doc.text(
-    'Price',
-    455,
-    y + 9,
+    'Quantity',
+    isInvoice
+      ? 365
+      : 445,
+    y + 7,
     {
-      width: 85,
+      width: 60,
       align: 'right',
     }
   );
-}
-  // doc.text(
-  //   'Quantity',
-  //   isInvoice
-  //     ? 350
-  //     : 445,
-  //   y + 9,
-  //   {
-  //     width: 70,
-  //     align: 'right',
-  //   }
-  // );
 
-  // if (isInvoice) {
-  //   doc.text(
-  //     'Price',
-  //     445,
-  //     y + 9,
-  //     {
-  //       width: 95,
-  //       align: 'right',
-  //     }
-  //   );
-  // }
+  /* PRICE - INVOICE ONLY */
+
+  if (isInvoice) {
+    doc.text(
+      'Price',
+      455,
+      y + 7,
+      {
+        width: 85,
+        align: 'right',
+      }
+    );
+  }
+
+  /* =====================================================
+     UNDERLINE BELOW TABLE HEADER
+  ===================================================== */
+
+  doc
+    .moveTo(
+      44,
+      y + 25
+    )
+    .lineTo(
+      551,
+      y + 25
+    )
+    .lineWidth(0.8)
+    .strokeColor('#111111')
+    .stroke();
+
+  /* Reset normal color */
 
   doc
     .fillColor('#111111');
 
+  /* Space before first product */
+
   doc.y =
     y + 35;
 }
+
+
 
 function drawOrderItems(
   doc,
@@ -1458,7 +1307,7 @@ function drawOrderItems(
 
     if (item.size) {
       doc
-        .font('Helvetica')
+        .font('Helvetica-Bold')
         .fontSize(8)
         .fillColor('#444444')
         .text(
@@ -1492,7 +1341,7 @@ function drawOrderItems(
       detailParts.length
     ) {
       doc
-        .font('Helvetica')
+        .font('Helvetica-Bold')
         .fontSize(8)
         .fillColor('#444444')
         .text(
