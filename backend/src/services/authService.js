@@ -1,6 +1,7 @@
 const jwt = require('jsonwebtoken');
 const pool = require('../config/db');
 const P = require('../config/prefix');
+const metaKeys = require('../config/metaKeys');
 const env = require('../config/env');
 const { verifyPassword, hashPassword } = require('../utils/password');
 const { parseCapabilities, hasAdminRole, serializeCapabilities } = require('../utils/php');
@@ -23,10 +24,10 @@ async function findUserByLoginOrEmail(identifier) {
             cap.meta_value AS capabilities
      FROM ${P}users u
      LEFT JOIN ${P}usermeta cap
-       ON cap.user_id = u.ID AND cap.meta_key = 'wpwd_capabilities'
+       ON cap.user_id = u.ID AND cap.meta_key = ?
      WHERE u.user_login = ? OR u.user_email = ?
      LIMIT 1`,
-    [identifier, identifier]
+    [metaKeys.capabilities, identifier, identifier]
   );
   return rows[0] || null;
 }
@@ -65,10 +66,10 @@ async function me(userId) {
             cap.meta_value AS capabilities
      FROM ${P}users u
      LEFT JOIN ${P}usermeta cap
-       ON cap.user_id = u.ID AND cap.meta_key = 'wpwd_capabilities'
+       ON cap.user_id = u.ID AND cap.meta_key = ?
      WHERE u.ID = ?
      LIMIT 1`,
-    [userId]
+    [metaKeys.capabilities, userId]
   );
   const user = rows[0];
   if (!user) {

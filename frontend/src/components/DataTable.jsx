@@ -30,6 +30,7 @@ export default function DataTable({
   emptyTitle = 'No records found',
   emptyDescription,
   stickyHeader = true,
+  rowsPerPageOptions = [10, 20, 50, 100],
 }) {
   if (loading) {
     return (
@@ -101,7 +102,7 @@ export default function DataTable({
             onRowsPerPageChange={(e) =>
               onRowsPerPageChange?.(parseInt(e.target.value, 10))
             }
-            rowsPerPageOptions={[10, 20, 50]}
+            rowsPerPageOptions={rowsPerPageOptions}
           />
         </Box>
       )}

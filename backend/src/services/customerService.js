@@ -1,5 +1,6 @@
 const pool = require('../config/db');
 const P = require('../config/prefix');
+const metaKeys = require('../config/metaKeys');
 const { parseList, listResponse } = require('../utils/listParams');
 const { slugify, nowLocal, nowGmt } = require('../utils/datetime');
 const { hashPassword } = require('../utils/password');
@@ -426,8 +427,8 @@ async function create(data) {
     await upsertUserMeta(conn, P, userId, 'nickname', username);
     await upsertUserMeta(conn, P, userId, 'first_name', first);
     await upsertUserMeta(conn, P, userId, 'last_name', last);
-    await upsertUserMeta(conn, P, userId, 'wpwd_capabilities', caps);
-    await upsertUserMeta(conn, P, userId, 'wpwd_user_level', '0');
+    await upsertUserMeta(conn, P, userId, metaKeys.capabilities, caps);
+    await upsertUserMeta(conn, P, userId, metaKeys.userLevel, '0');
     await upsertUserMeta(conn, P, userId, 'billing_first_name', first);
     await upsertUserMeta(conn, P, userId, 'billing_last_name', last);
     await upsertUserMeta(conn, P, userId, 'billing_email', email);

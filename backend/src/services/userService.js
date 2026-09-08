@@ -1,5 +1,6 @@
 const pool = require('../config/db');
 const P = require('../config/prefix');
+const metaKeys = require('../config/metaKeys');
 const { parseList, listResponse } = require('../utils/listParams');
 const { slugify, nowLocal } = require('../utils/datetime');
 const { hashPassword } = require('../utils/password');
@@ -41,9 +42,9 @@ async function list(req) {
   const [[{ total }]] = await pool.query(
     `SELECT COUNT(*) AS total
      FROM ${P}users u
-     LEFT JOIN ${P}usermeta cap ON cap.user_id = u.ID AND cap.meta_key = 'wpwd_capabilities'
+     LEFT JOIN ${P}usermeta cap ON cap.user_id = u.ID AND cap.meta_key = ?
      WHERE ${where}`,
-    params
+    [metaKeys.capabilities, ...params]
   );
 
   const [rows] = await pool.query(
@@ -52,13 +53,13 @@ async function list(req) {
             cap.meta_value AS capabilities,
             fn.meta_value AS first_name, ln.meta_value AS last_name
      FROM ${P}users u
-     LEFT JOIN ${P}usermeta cap ON cap.user_id = u.ID AND cap.meta_key = 'wpwd_capabilities'
+     LEFT JOIN ${P}usermeta cap ON cap.user_id = u.ID AND cap.meta_key = ?
      LEFT JOIN ${P}usermeta fn ON fn.user_id = u.ID AND fn.meta_key = 'first_name'
      LEFT JOIN ${P}usermeta ln ON ln.user_id = u.ID AND ln.meta_key = 'last_name'
      WHERE ${where}
      ORDER BY ${sortCol} ${dir}
      LIMIT ? OFFSET ?`,
-    [...params, limit, offset]
+    [metaKeys.capabilities, ...params, limit, offset]
   );
 
   const data = rows.map((r) => ({
@@ -82,9 +83,9 @@ async function getById(id) {
             u.display_name, u.user_registered AS registered, u.user_status AS status,
             cap.meta_value AS capabilities
      FROM ${P}users u
-     LEFT JOIN ${P}usermeta cap ON cap.user_id = u.ID AND cap.meta_key = 'wpwd_capabilities'
+     LEFT JOIN ${P}usermeta cap ON cap.user_id = u.ID AND cap.meta_key = ?
      WHERE u.ID = ? LIMIT 1`,
-    [id]
+    [metaKeys.capabilities, id]
   );
   if (!row) throw httpError(404, 'User not found');
 
@@ -147,8 +148,8 @@ async function create(body) {
     await upsertUserMeta(conn, P, id, 'nickname', login);
     await upsertUserMeta(conn, P, id, 'first_name', first_name);
     await upsertUserMeta(conn, P, id, 'last_name', last_name);
-    await upsertUserMeta(conn, P, id, 'wpwd_capabilities', serializeCapabilities(roleList));
-    await upsertUserMeta(conn, P, id, 'wpwd_user_level', roleList.includes('administrator') ? '10' : '0');
+    await upsertUserMeta(conn, P, id, metaKeys.capabilities, serializeCapabilities(roleList));
+    await upsertUserMeta(conn, P, id, metaKeys.userLevel, roleList.includes('administrator') ? '10' : '0');
 
     return id;
   });
@@ -197,21 +198,21 @@ async function update(id, body) {
     if (last_name != null) await upsertUserMeta(conn, P, id, 'last_name', last_name);
 
     if (Array.isArray(roles) && roles.length) {
-      await upsertUserMeta(conn, P, id, 'wpwd_capabilities', serializeCapabilities(roles));
+      await upsertUserMeta(conn, P, id, metaKeys.capabilities, serializeCapabilities(roles));
       await upsertUserMeta(
         conn,
         P,
         id,
-        'wpwd_user_level',
+        metaKeys.userLevel,
         roles.includes('administrator') ? '10' : '0'
       );
     } else if (active === false) {
       // Deactivate admin access → subscriber
-      await upsertUserMeta(conn, P, id, 'wpwd_capabilities', serializeCapabilities(['subscriber']));
-      await upsertUserMeta(conn, P, id, 'wpwd_user_level', '0');
+      await upsertUserMeta(conn, P, id, metaKeys.capabilities, serializeCapabilities(['subscriber']));
+      await upsertUserMeta(conn, P, id, metaKeys.userLevel, '0');
     } else if (active === true && (!user.roles || !user.roles.length)) {
-      await upsertUserMeta(conn, P, id, 'wpwd_capabilities', serializeCapabilities(['administrator']));
-      await upsertUserMeta(conn, P, id, 'wpwd_user_level', '10');
+      await upsertUserMeta(conn, P, id, metaKeys.capabilities, serializeCapabilities(['administrator']));
+      await upsertUserMeta(conn, P, id, metaKeys.userLevel, '10');
     }
 
     return getById(id);

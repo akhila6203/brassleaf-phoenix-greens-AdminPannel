@@ -213,218 +213,6 @@ async function writeProductMeta(conn, productId, data, existingSales) {
   await syncOutOfStockVisibility(conn, productId, stockStatus);
 }
 
-// async function list(req) {
-//   const { page, limit, offset, sortCol, dir, search } = parseList(req, SORT, 'date');
-//   const stockStatus = req.query.stock_status || '';
-//   const category = req.query.category || '';
-//   const status = req.query.status || '';
-//   const params = [];
-//   let where = `p.post_type = 'product' AND p.post_status NOT IN ('auto-draft')`;
-
-//   if (status) {
-//     where += ` AND p.post_status = ?`;
-//     params.push(status);
-//   } else {
-//     where += ` AND p.post_status IN ('publish','draft','private','pending')`;
-//   }
-//   if (search) {
-//     where += ` AND (p.post_title LIKE ? OR ml.sku LIKE ?)`;
-//     params.push(`%${search}%`, `%${search}%`);
-//   }
-//   if (stockStatus) {
-//     where += ` AND ml.stock_status = ?`;
-//     params.push(stockStatus);
-//   }
-//   if (category) {
-//     where += ` AND EXISTS (
-//       SELECT 1 FROM ${P}term_relationships tr
-//       JOIN ${P}term_taxonomy tt ON tt.term_taxonomy_id = tr.term_taxonomy_id
-//       JOIN ${P}terms t ON t.term_id = tt.term_id
-//       WHERE tr.object_id = p.ID AND tt.taxonomy = 'product_cat'
-//         AND (t.slug = ? OR t.term_id = ?)
-//     )`;
-//     params.push(category, category);
-//   }
-
-//   const [[{ total }]] = await pool.query(
-//     `SELECT COUNT(*) AS total
-//      FROM ${P}posts p
-//      LEFT JOIN ${P}wc_product_meta_lookup ml ON ml.product_id = p.ID
-//      WHERE ${where}`,
-//     params
-//   );
-
-//   const [rows] = await pool.query(
-//     `SELECT
-//        p.ID, p.ID AS id,
-//        p.post_title AS name,
-//        p.post_name AS slug,
-//        p.post_status AS status,
-//        p.post_date AS created_at,
-//        p.post_modified AS updated_at,
-//        ml.sku, ml.min_price, ml.max_price, ml.stock_status, ml.stock_quantity,
-//        ml.onsale, ml.total_sales, ml.average_rating, ml.rating_count,
-//        att.guid AS image_url,
-//        file_pm.meta_value AS image_file,
-//        (
-//          SELECT t.name FROM ${P}term_relationships tr
-//          JOIN ${P}term_taxonomy tt ON tt.term_taxonomy_id = tr.term_taxonomy_id AND tt.taxonomy = 'product_type'
-//          JOIN ${P}terms t ON t.term_id = tt.term_id
-//          WHERE tr.object_id = p.ID LIMIT 1
-//        ) AS product_type,
-//        (
-//          SELECT GROUP_CONCAT(t.name ORDER BY t.name SEPARATOR ', ')
-//          FROM ${P}term_relationships tr
-//          JOIN ${P}term_taxonomy tt ON tt.term_taxonomy_id = tr.term_taxonomy_id AND tt.taxonomy = 'product_cat'
-//          JOIN ${P}terms t ON t.term_id = tt.term_id
-//          WHERE tr.object_id = p.ID
-//        ) AS categories_text
-//      FROM ${P}posts p
-//      LEFT JOIN ${P}wc_product_meta_lookup ml ON ml.product_id = p.ID
-//      LEFT JOIN ${P}postmeta thumb
-//        ON thumb.post_id = p.ID AND thumb.meta_key = '_thumbnail_id'
-//      LEFT JOIN ${P}posts att ON att.ID = thumb.meta_value AND att.post_type = 'attachment'
-//      LEFT JOIN ${P}postmeta file_pm
-//        ON file_pm.post_id = att.ID AND file_pm.meta_key = '_wp_attached_file'
-//      WHERE ${where}
-//      ORDER BY ${sortCol} ${dir}
-//      LIMIT ? OFFSET ?`,
-//     [...params, limit, offset]
-//   );
-
-//   return listResponse(rows, total, page, limit);
-// }
-
-// async function getById(id) {
-//   const [[product]] = await pool.query(
-//     `SELECT
-//        p.ID, p.ID AS id,
-//        p.post_title AS name,
-//        p.post_name AS slug,
-//        p.post_content AS description,
-//        p.post_excerpt AS short_description,
-//        p.post_status AS status,
-//        p.post_date AS created_at,
-//        p.post_modified AS updated_at,
-//        ml.sku, ml.min_price, ml.max_price, ml.stock_status, ml.stock_quantity,
-//        ml.onsale, ml.total_sales, ml.average_rating, ml.rating_count,
-//        ml.virtual, ml.downloadable, ml.tax_status, ml.tax_class
-//      FROM ${P}posts p
-//      LEFT JOIN ${P}wc_product_meta_lookup ml ON ml.product_id = p.ID
-//      WHERE p.ID = ? AND p.post_type = 'product'`,
-//     [id]
-//   );
-//   if (!product) throw httpError(404, 'Product not found');
-
-//   const metaMap = await getPostMetaMap(pool, P, id);
-//   const [variations] = await pool.query(
-//     `SELECT
-//        v.ID, v.post_title AS name, v.post_status AS status,
-//        pm_price.meta_value AS price,
-//        pm_reg.meta_value AS regular_price,
-//        pm_sale.meta_value AS sale_price,
-//        pm_sku.meta_value AS sku,
-//        pm_stock.meta_value AS stock_quantity,
-//        pm_ss.meta_value AS stock_status,
-//        pm_size.meta_value AS size
-//      FROM ${P}posts v
-//      LEFT JOIN ${P}postmeta pm_price ON pm_price.post_id = v.ID AND pm_price.meta_key = '_price'
-//      LEFT JOIN ${P}postmeta pm_reg   ON pm_reg.post_id   = v.ID AND pm_reg.meta_key   = '_regular_price'
-//      LEFT JOIN ${P}postmeta pm_sale  ON pm_sale.post_id  = v.ID AND pm_sale.meta_key  = '_sale_price'
-//      LEFT JOIN ${P}postmeta pm_sku   ON pm_sku.post_id   = v.ID AND pm_sku.meta_key   = '_sku'
-//      LEFT JOIN ${P}postmeta pm_stock ON pm_stock.post_id = v.ID AND pm_stock.meta_key = '_stock'
-//      LEFT JOIN ${P}postmeta pm_ss    ON pm_ss.post_id    = v.ID AND pm_ss.meta_key    = '_stock_status'
-//      LEFT JOIN ${P}postmeta pm_size  ON pm_size.post_id  = v.ID AND pm_size.meta_key  = 'attribute_pa_size'
-//      WHERE v.post_parent = ? AND v.post_type = 'product_variation'
-//      ORDER BY v.menu_order, v.ID`,
-//     [id]
-//   );
-
-//   const [categories] = await pool.query(
-//     `SELECT t.term_id, t.name, t.slug, tt.term_taxonomy_id
-//      FROM ${P}term_relationships tr
-//      JOIN ${P}term_taxonomy tt ON tt.term_taxonomy_id = tr.term_taxonomy_id
-//      JOIN ${P}terms t ON t.term_id = tt.term_id
-//      WHERE tr.object_id = ? AND tt.taxonomy = 'product_cat'`,
-//     [id]
-//   );
-
-//   const [tags] = await pool.query(
-//     `SELECT t.term_id, t.name, t.slug
-//      FROM ${P}term_relationships tr
-//      JOIN ${P}term_taxonomy tt ON tt.term_taxonomy_id = tr.term_taxonomy_id
-//      JOIN ${P}terms t ON t.term_id = tt.term_id
-//      WHERE tr.object_id = ? AND tt.taxonomy = 'product_tag'`,
-//     [id]
-//   );
-
-//   const [[typeRow]] = await pool.query(
-//     `SELECT t.name, t.slug
-//      FROM ${P}term_relationships tr
-//      JOIN ${P}term_taxonomy tt ON tt.term_taxonomy_id = tr.term_taxonomy_id
-//      JOIN ${P}terms t ON t.term_id = tt.term_id
-//      WHERE tr.object_id = ? AND tt.taxonomy = 'product_type'
-//      LIMIT 1`,
-//     [id]
-//   );
-
-//   const [visibility] = await pool.query(
-//     `SELECT t.name, t.slug
-//      FROM ${P}term_relationships tr
-//      JOIN ${P}term_taxonomy tt ON tt.term_taxonomy_id = tr.term_taxonomy_id
-//      JOIN ${P}terms t ON t.term_id = tt.term_id
-//      WHERE tr.object_id = ? AND tt.taxonomy = 'product_visibility'`,
-//     [id]
-//   );
-
-//   const thumb = metaMap._thumbnail_id || null;
-//   const galleryIds = metaMap._product_image_gallery
-//     ? metaMap._product_image_gallery.split(',').map((s) => s.trim()).filter(Boolean)
-//     : [];
-//   const imageIds = [...new Set([thumb, ...galleryIds].filter(Boolean))];
-//   let images = [];
-//   if (imageIds.length) {
-//     const [atts] = await pool.query(
-//       `SELECT a.ID, a.post_title AS title, a.guid, f.meta_value AS file
-//        FROM ${P}posts a
-//        LEFT JOIN ${P}postmeta f ON f.post_id = a.ID AND f.meta_key = '_wp_attached_file'
-//        WHERE a.ID IN (${imageIds.map(() => '?').join(',')}) AND a.post_type = 'attachment'`,
-//       imageIds
-//     );
-//     images = atts;
-//   }
-
-//   const featuredImage = images.find((i) => String(i.ID) === String(thumb)) || null;
-//   const gallery = images.filter((i) => galleryIds.includes(String(i.ID)));
-
-//   return {
-//     ...product,
-//     product_type: typeRow?.slug || typeRow?.name || null,
-//     type: typeRow?.slug || null,
-//     regular_price: metaMap._regular_price ?? product.min_price,
-//     sale_price: metaMap._sale_price || '',
-//     price: metaMap._price ?? product.min_price,
-//     manage_stock: metaMap._manage_stock || 'no',
-//     backorders: metaMap._backorders || 'no',
-//     weight: metaMap._weight || '',
-//     length: metaMap._length || '',
-//     width: metaMap._width || '',
-//     height: metaMap._height || '',
-//     post_content: product.description,
-//     post_status: product.status,
-//     thumbnail_id: thumb,
-//     galleryIds,
-//     featured_image: featuredImage,
-//     gallery,
-//     variations,
-//     categories,
-//     tags,
-//     visibility,
-//     featured: visibility.some((v) => v.slug === 'featured'),
-//     images,
-//     meta: metaMap,
-//   };
-// }
 async function list(req, options = {}) {
   const {
     publicOnly = false,
@@ -446,8 +234,31 @@ async function list(req, options = {}) {
   const stockStatus =
     req.query.stock_status || '';
 
+  // const category =
+  //   req.query.category || '';
   const category =
-    req.query.category || '';
+  req.query.category || "";
+
+/*
+  Customer website can send:
+
+  category=grade1-2
+
+  OR
+
+  category=grade1-2,jacket
+
+  OR
+
+  category=sports-1-5,sr-sports-uniform
+
+  This allows common uniform products to appear
+  together with the class-specific products.
+*/
+const categoryValues = String(category)
+  .split(",")
+  .map((value) => value.trim())
+  .filter(Boolean);
 
   const status =
     req.query.status || '';
@@ -531,39 +342,87 @@ async function list(req, options = {}) {
   /* =====================================================
      CATEGORY FILTER
   ===================================================== */
+/* =========================================================
+   CATEGORY FILTER
 
-  if (category) {
-    where += `
-      AND EXISTS (
-        SELECT 1
+   Supports one or multiple category slugs.
 
-        FROM ${P}term_relationships tr
+   Examples:
+   grade1-2
+   grade1-2,jacket
+   grade-3-5,jacket,white-shirt
+   sports-1-5,sr-sports-uniform
+========================================================= */
 
-        JOIN ${P}term_taxonomy tt
-          ON tt.term_taxonomy_id =
-             tr.term_taxonomy_id
+if (categoryValues.length > 0) {
+  const placeholders =
+    categoryValues.map(() => "?").join(", ");
 
-        JOIN ${P}terms t
-          ON t.term_id = tt.term_id
+  where += `
+    AND EXISTS (
+      SELECT 1
 
-        WHERE
-          tr.object_id = p.ID
+      FROM ${P}term_relationships tr
 
-          AND tt.taxonomy =
-              'product_cat'
+      JOIN ${P}term_taxonomy tt
+        ON tt.term_taxonomy_id =
+           tr.term_taxonomy_id
 
-          AND (
-            t.slug = ?
-            OR t.term_id = ?
-          )
-      )
-    `;
+      JOIN ${P}terms t
+        ON t.term_id =
+           tt.term_id
 
-    params.push(
-      category,
-      category
-    );
-  }
+      WHERE
+        tr.object_id = p.ID
+
+        AND tt.taxonomy =
+            'product_cat'
+
+        AND (
+          t.slug IN (${placeholders})
+          OR CAST(t.term_id AS CHAR)
+             IN (${placeholders})
+        )
+    )
+  `;
+
+  params.push(
+    ...categoryValues,
+    ...categoryValues
+  );
+}
+  // if (category) {
+  //   where += `
+  //     AND EXISTS (
+  //       SELECT 1
+
+  //       FROM ${P}term_relationships tr
+
+  //       JOIN ${P}term_taxonomy tt
+  //         ON tt.term_taxonomy_id =
+  //            tr.term_taxonomy_id
+
+  //       JOIN ${P}terms t
+  //         ON t.term_id = tt.term_id
+
+  //       WHERE
+  //         tr.object_id = p.ID
+
+  //         AND tt.taxonomy =
+  //             'product_cat'
+
+  //         AND (
+  //           t.slug = ?
+  //           OR t.term_id = ?
+  //         )
+  //     )
+  //   `;
+
+  //   params.push(
+  //     category,
+  //     category
+  //   );
+  // }
 
   /* =====================================================
      TOTAL COUNT
@@ -896,8 +755,16 @@ async function getById(
           pm_ss.meta_value
             AS stock_status,
 
-          pm_size.meta_value
-            AS size
+          COALESCE(
+  NULLIF(
+    pm_size_pa.meta_value,
+    ''
+  ),
+  NULLIF(
+    pm_size_plain.meta_value,
+    ''
+  )
+) AS size
 
         FROM ${P}posts v
 
@@ -962,14 +829,25 @@ async function getById(
             '_stock_status'
 
         LEFT JOIN
-          ${P}postmeta pm_size
+  ${P}postmeta pm_size_pa
 
-          ON
-            pm_size.post_id = v.ID
+ON
+  pm_size_pa.post_id = v.ID
 
-          AND
-            pm_size.meta_key =
-            'attribute_pa_size'
+AND
+  pm_size_pa.meta_key =
+  'attribute_pa_size'
+
+
+LEFT JOIN
+  ${P}postmeta pm_size_plain
+
+ON
+  pm_size_plain.post_id = v.ID
+
+AND
+  pm_size_plain.meta_key =
+  'attribute_size'
 
         WHERE
           v.post_parent = ?
@@ -1511,8 +1389,16 @@ async function updateVariation(productId, variationId, data) {
       data.stock_quantity !== undefined ? data.stock_quantity : metaMap._stock;
     const stockStatus = data.stock_status || metaMap._stock_status || 'instock';
     const sku = data.sku !== undefined ? data.sku : metaMap._sku || '';
+    // const size =
+    //   data.size !== undefined ? data.size : metaMap.attribute_pa_size || '';
     const size =
-      data.size !== undefined ? data.size : metaMap.attribute_pa_size || '';
+  data.size !== undefined
+    ? data.size
+    : (
+        metaMap.attribute_pa_size ??
+        metaMap.attribute_size ??
+        ""
+      );
 
     const pairs = [
       ['_sku', sku || ''],
@@ -1523,9 +1409,24 @@ async function updateVariation(productId, variationId, data) {
       ['_stock_status', stockStatus],
       ['_manage_stock', stockQty != null && stockQty !== '' ? 'yes' : metaMap._manage_stock || 'no'],
     ];
-    if (size !== undefined && size !== null) {
-      pairs.push(['attribute_pa_size', String(size)]);
-    }
+    // if (size !== undefined && size !== null) {
+    //   pairs.push(['attribute_pa_size', String(size)]);
+    // }
+    if (
+  size !== undefined &&
+  size !== null
+) {
+ 
+  pairs.push([
+    'attribute_size',
+    String(size),
+  ]);
+
+  pairs.push([
+    'attribute_pa_size',
+    String(size),
+  ]);
+}
 
     for (const [k, v] of pairs) {
       await upsertPostMeta(conn, P, variationId, k, v);
@@ -1559,6 +1460,12 @@ module.exports = {
   DEFAULT_CAT_TT,
   UNCATEGORIZED_TT,
 };
+
+
+
+
+
+
 
 
 // const pool = require('../config/db');
@@ -1776,216 +1683,1119 @@ module.exports = {
 //   await syncOutOfStockVisibility(conn, productId, stockStatus);
 // }
 
-// async function list(req) {
-//   const { page, limit, offset, sortCol, dir, search } = parseList(req, SORT, 'date');
-//   const stockStatus = req.query.stock_status || '';
-//   const category = req.query.category || '';
-//   const status = req.query.status || '';
-//   const params = [];
-//   let where = `p.post_type = 'product' AND p.post_status NOT IN ('auto-draft')`;
+// // async function list(req) {
+// //   const { page, limit, offset, sortCol, dir, search } = parseList(req, SORT, 'date');
+// //   const stockStatus = req.query.stock_status || '';
+// //   const category = req.query.category || '';
+// //   const status = req.query.status || '';
+// //   const params = [];
+// //   let where = `p.post_type = 'product' AND p.post_status NOT IN ('auto-draft')`;
 
-//   if (status) {
-//     where += ` AND p.post_status = ?`;
-//     params.push(status);
-//   } else {
-//     where += ` AND p.post_status IN ('publish','draft','private','pending')`;
+// //   if (status) {
+// //     where += ` AND p.post_status = ?`;
+// //     params.push(status);
+// //   } else {
+// //     where += ` AND p.post_status IN ('publish','draft','private','pending')`;
+// //   }
+// //   if (search) {
+// //     where += ` AND (p.post_title LIKE ? OR ml.sku LIKE ?)`;
+// //     params.push(`%${search}%`, `%${search}%`);
+// //   }
+// //   if (stockStatus) {
+// //     where += ` AND ml.stock_status = ?`;
+// //     params.push(stockStatus);
+// //   }
+// //   if (category) {
+// //     where += ` AND EXISTS (
+// //       SELECT 1 FROM ${P}term_relationships tr
+// //       JOIN ${P}term_taxonomy tt ON tt.term_taxonomy_id = tr.term_taxonomy_id
+// //       JOIN ${P}terms t ON t.term_id = tt.term_id
+// //       WHERE tr.object_id = p.ID AND tt.taxonomy = 'product_cat'
+// //         AND (t.slug = ? OR t.term_id = ?)
+// //     )`;
+// //     params.push(category, category);
+// //   }
+
+// //   const [[{ total }]] = await pool.query(
+// //     `SELECT COUNT(*) AS total
+// //      FROM ${P}posts p
+// //      LEFT JOIN ${P}wc_product_meta_lookup ml ON ml.product_id = p.ID
+// //      WHERE ${where}`,
+// //     params
+// //   );
+
+// //   const [rows] = await pool.query(
+// //     `SELECT
+// //        p.ID, p.ID AS id,
+// //        p.post_title AS name,
+// //        p.post_name AS slug,
+// //        p.post_status AS status,
+// //        p.post_date AS created_at,
+// //        p.post_modified AS updated_at,
+// //        ml.sku, ml.min_price, ml.max_price, ml.stock_status, ml.stock_quantity,
+// //        ml.onsale, ml.total_sales, ml.average_rating, ml.rating_count,
+// //        att.guid AS image_url,
+// //        file_pm.meta_value AS image_file,
+// //        (
+// //          SELECT t.name FROM ${P}term_relationships tr
+// //          JOIN ${P}term_taxonomy tt ON tt.term_taxonomy_id = tr.term_taxonomy_id AND tt.taxonomy = 'product_type'
+// //          JOIN ${P}terms t ON t.term_id = tt.term_id
+// //          WHERE tr.object_id = p.ID LIMIT 1
+// //        ) AS product_type,
+// //        (
+// //          SELECT GROUP_CONCAT(t.name ORDER BY t.name SEPARATOR ', ')
+// //          FROM ${P}term_relationships tr
+// //          JOIN ${P}term_taxonomy tt ON tt.term_taxonomy_id = tr.term_taxonomy_id AND tt.taxonomy = 'product_cat'
+// //          JOIN ${P}terms t ON t.term_id = tt.term_id
+// //          WHERE tr.object_id = p.ID
+// //        ) AS categories_text
+// //      FROM ${P}posts p
+// //      LEFT JOIN ${P}wc_product_meta_lookup ml ON ml.product_id = p.ID
+// //      LEFT JOIN ${P}postmeta thumb
+// //        ON thumb.post_id = p.ID AND thumb.meta_key = '_thumbnail_id'
+// //      LEFT JOIN ${P}posts att ON att.ID = thumb.meta_value AND att.post_type = 'attachment'
+// //      LEFT JOIN ${P}postmeta file_pm
+// //        ON file_pm.post_id = att.ID AND file_pm.meta_key = '_wp_attached_file'
+// //      WHERE ${where}
+// //      ORDER BY ${sortCol} ${dir}
+// //      LIMIT ? OFFSET ?`,
+// //     [...params, limit, offset]
+// //   );
+
+// //   return listResponse(rows, total, page, limit);
+// // }
+
+// // async function getById(id) {
+// //   const [[product]] = await pool.query(
+// //     `SELECT
+// //        p.ID, p.ID AS id,
+// //        p.post_title AS name,
+// //        p.post_name AS slug,
+// //        p.post_content AS description,
+// //        p.post_excerpt AS short_description,
+// //        p.post_status AS status,
+// //        p.post_date AS created_at,
+// //        p.post_modified AS updated_at,
+// //        ml.sku, ml.min_price, ml.max_price, ml.stock_status, ml.stock_quantity,
+// //        ml.onsale, ml.total_sales, ml.average_rating, ml.rating_count,
+// //        ml.virtual, ml.downloadable, ml.tax_status, ml.tax_class
+// //      FROM ${P}posts p
+// //      LEFT JOIN ${P}wc_product_meta_lookup ml ON ml.product_id = p.ID
+// //      WHERE p.ID = ? AND p.post_type = 'product'`,
+// //     [id]
+// //   );
+// //   if (!product) throw httpError(404, 'Product not found');
+
+// //   const metaMap = await getPostMetaMap(pool, P, id);
+// //   const [variations] = await pool.query(
+// //     `SELECT
+// //        v.ID, v.post_title AS name, v.post_status AS status,
+// //        pm_price.meta_value AS price,
+// //        pm_reg.meta_value AS regular_price,
+// //        pm_sale.meta_value AS sale_price,
+// //        pm_sku.meta_value AS sku,
+// //        pm_stock.meta_value AS stock_quantity,
+// //        pm_ss.meta_value AS stock_status,
+// //        pm_size.meta_value AS size
+// //      FROM ${P}posts v
+// //      LEFT JOIN ${P}postmeta pm_price ON pm_price.post_id = v.ID AND pm_price.meta_key = '_price'
+// //      LEFT JOIN ${P}postmeta pm_reg   ON pm_reg.post_id   = v.ID AND pm_reg.meta_key   = '_regular_price'
+// //      LEFT JOIN ${P}postmeta pm_sale  ON pm_sale.post_id  = v.ID AND pm_sale.meta_key  = '_sale_price'
+// //      LEFT JOIN ${P}postmeta pm_sku   ON pm_sku.post_id   = v.ID AND pm_sku.meta_key   = '_sku'
+// //      LEFT JOIN ${P}postmeta pm_stock ON pm_stock.post_id = v.ID AND pm_stock.meta_key = '_stock'
+// //      LEFT JOIN ${P}postmeta pm_ss    ON pm_ss.post_id    = v.ID AND pm_ss.meta_key    = '_stock_status'
+// //      LEFT JOIN ${P}postmeta pm_size  ON pm_size.post_id  = v.ID AND pm_size.meta_key  = 'attribute_pa_size'
+// //      WHERE v.post_parent = ? AND v.post_type = 'product_variation'
+// //      ORDER BY v.menu_order, v.ID`,
+// //     [id]
+// //   );
+
+// //   const [categories] = await pool.query(
+// //     `SELECT t.term_id, t.name, t.slug, tt.term_taxonomy_id
+// //      FROM ${P}term_relationships tr
+// //      JOIN ${P}term_taxonomy tt ON tt.term_taxonomy_id = tr.term_taxonomy_id
+// //      JOIN ${P}terms t ON t.term_id = tt.term_id
+// //      WHERE tr.object_id = ? AND tt.taxonomy = 'product_cat'`,
+// //     [id]
+// //   );
+
+// //   const [tags] = await pool.query(
+// //     `SELECT t.term_id, t.name, t.slug
+// //      FROM ${P}term_relationships tr
+// //      JOIN ${P}term_taxonomy tt ON tt.term_taxonomy_id = tr.term_taxonomy_id
+// //      JOIN ${P}terms t ON t.term_id = tt.term_id
+// //      WHERE tr.object_id = ? AND tt.taxonomy = 'product_tag'`,
+// //     [id]
+// //   );
+
+// //   const [[typeRow]] = await pool.query(
+// //     `SELECT t.name, t.slug
+// //      FROM ${P}term_relationships tr
+// //      JOIN ${P}term_taxonomy tt ON tt.term_taxonomy_id = tr.term_taxonomy_id
+// //      JOIN ${P}terms t ON t.term_id = tt.term_id
+// //      WHERE tr.object_id = ? AND tt.taxonomy = 'product_type'
+// //      LIMIT 1`,
+// //     [id]
+// //   );
+
+// //   const [visibility] = await pool.query(
+// //     `SELECT t.name, t.slug
+// //      FROM ${P}term_relationships tr
+// //      JOIN ${P}term_taxonomy tt ON tt.term_taxonomy_id = tr.term_taxonomy_id
+// //      JOIN ${P}terms t ON t.term_id = tt.term_id
+// //      WHERE tr.object_id = ? AND tt.taxonomy = 'product_visibility'`,
+// //     [id]
+// //   );
+
+// //   const thumb = metaMap._thumbnail_id || null;
+// //   const galleryIds = metaMap._product_image_gallery
+// //     ? metaMap._product_image_gallery.split(',').map((s) => s.trim()).filter(Boolean)
+// //     : [];
+// //   const imageIds = [...new Set([thumb, ...galleryIds].filter(Boolean))];
+// //   let images = [];
+// //   if (imageIds.length) {
+// //     const [atts] = await pool.query(
+// //       `SELECT a.ID, a.post_title AS title, a.guid, f.meta_value AS file
+// //        FROM ${P}posts a
+// //        LEFT JOIN ${P}postmeta f ON f.post_id = a.ID AND f.meta_key = '_wp_attached_file'
+// //        WHERE a.ID IN (${imageIds.map(() => '?').join(',')}) AND a.post_type = 'attachment'`,
+// //       imageIds
+// //     );
+// //     images = atts;
+// //   }
+
+// //   const featuredImage = images.find((i) => String(i.ID) === String(thumb)) || null;
+// //   const gallery = images.filter((i) => galleryIds.includes(String(i.ID)));
+
+// //   return {
+// //     ...product,
+// //     product_type: typeRow?.slug || typeRow?.name || null,
+// //     type: typeRow?.slug || null,
+// //     regular_price: metaMap._regular_price ?? product.min_price,
+// //     sale_price: metaMap._sale_price || '',
+// //     price: metaMap._price ?? product.min_price,
+// //     manage_stock: metaMap._manage_stock || 'no',
+// //     backorders: metaMap._backorders || 'no',
+// //     weight: metaMap._weight || '',
+// //     length: metaMap._length || '',
+// //     width: metaMap._width || '',
+// //     height: metaMap._height || '',
+// //     post_content: product.description,
+// //     post_status: product.status,
+// //     thumbnail_id: thumb,
+// //     galleryIds,
+// //     featured_image: featuredImage,
+// //     gallery,
+// //     variations,
+// //     categories,
+// //     tags,
+// //     visibility,
+// //     featured: visibility.some((v) => v.slug === 'featured'),
+// //     images,
+// //     meta: metaMap,
+// //   };
+// // }
+// async function list(req, options = {}) {
+//   const {
+//     publicOnly = false,
+//   } = options;
+
+//   const {
+//     page,
+//     limit,
+//     offset,
+//     sortCol,
+//     dir,
+//     search,
+//   } = parseList(
+//     req,
+//     SORT,
+//     'date'
+//   );
+
+//   const stockStatus =
+//     req.query.stock_status || '';
+
+//   const category =
+//     req.query.category || '';
+
+//   const status =
+//     req.query.status || '';
+
+//   const params = [];
+
+//   let where =
+//     `p.post_type = 'product'`;
+
+//   /* =====================================================
+//      CUSTOMER WEBSITE
+
+//      ONLY PUBLISHED PRODUCTS
+//   ===================================================== */
+
+//   if (publicOnly) {
+//     where += `
+//       AND p.post_status = 'publish'
+//     `;
 //   }
+
+//   /* =====================================================
+//      ADMIN PANEL
+
+//      ADMIN CAN SEE OTHER STATUSES
+//   ===================================================== */
+
+//   else {
+//     where += `
+//       AND p.post_status NOT IN ('auto-draft')
+//     `;
+
+//     if (status) {
+//       where += `
+//         AND p.post_status = ?
+//       `;
+
+//       params.push(status);
+//     } else {
+//       where += `
+//         AND p.post_status IN (
+//           'publish',
+//           'draft',
+//           'private',
+//           'pending'
+//         )
+//       `;
+//     }
+//   }
+
+//   /* =====================================================
+//      SEARCH
+//   ===================================================== */
+
 //   if (search) {
-//     where += ` AND (p.post_title LIKE ? OR ml.sku LIKE ?)`;
-//     params.push(`%${search}%`, `%${search}%`);
+//     where += `
+//       AND (
+//         p.post_title LIKE ?
+//         OR ml.sku LIKE ?
+//       )
+//     `;
+
+//     params.push(
+//       `%${search}%`,
+//       `%${search}%`
+//     );
 //   }
+
+//   /* =====================================================
+//      STOCK FILTER
+//   ===================================================== */
+
 //   if (stockStatus) {
-//     where += ` AND ml.stock_status = ?`;
+//     where += `
+//       AND ml.stock_status = ?
+//     `;
+
 //     params.push(stockStatus);
 //   }
+
+//   /* =====================================================
+//      CATEGORY FILTER
+//   ===================================================== */
+
 //   if (category) {
-//     where += ` AND EXISTS (
-//       SELECT 1 FROM ${P}term_relationships tr
-//       JOIN ${P}term_taxonomy tt ON tt.term_taxonomy_id = tr.term_taxonomy_id
-//       JOIN ${P}terms t ON t.term_id = tt.term_id
-//       WHERE tr.object_id = p.ID AND tt.taxonomy = 'product_cat'
-//         AND (t.slug = ? OR t.term_id = ?)
-//     )`;
-//     params.push(category, category);
+//     where += `
+//       AND EXISTS (
+//         SELECT 1
+
+//         FROM ${P}term_relationships tr
+
+//         JOIN ${P}term_taxonomy tt
+//           ON tt.term_taxonomy_id =
+//              tr.term_taxonomy_id
+
+//         JOIN ${P}terms t
+//           ON t.term_id = tt.term_id
+
+//         WHERE
+//           tr.object_id = p.ID
+
+//           AND tt.taxonomy =
+//               'product_cat'
+
+//           AND (
+//             t.slug = ?
+//             OR t.term_id = ?
+//           )
+//       )
+//     `;
+
+//     params.push(
+//       category,
+//       category
+//     );
 //   }
 
-//   const [[{ total }]] = await pool.query(
-//     `SELECT COUNT(*) AS total
-//      FROM ${P}posts p
-//      LEFT JOIN ${P}wc_product_meta_lookup ml ON ml.product_id = p.ID
-//      WHERE ${where}`,
-//     params
-//   );
+//   /* =====================================================
+//      TOTAL COUNT
+//   ===================================================== */
 
-//   const [rows] = await pool.query(
-//     `SELECT
-//        p.ID, p.ID AS id,
-//        p.post_title AS name,
-//        p.post_name AS slug,
-//        p.post_status AS status,
-//        p.post_date AS created_at,
-//        p.post_modified AS updated_at,
-//        ml.sku, ml.min_price, ml.max_price, ml.stock_status, ml.stock_quantity,
-//        ml.onsale, ml.total_sales, ml.average_rating, ml.rating_count,
-//        att.guid AS image_url,
-//        file_pm.meta_value AS image_file,
-//        (
-//          SELECT t.name FROM ${P}term_relationships tr
-//          JOIN ${P}term_taxonomy tt ON tt.term_taxonomy_id = tr.term_taxonomy_id AND tt.taxonomy = 'product_type'
-//          JOIN ${P}terms t ON t.term_id = tt.term_id
-//          WHERE tr.object_id = p.ID LIMIT 1
-//        ) AS product_type,
-//        (
-//          SELECT GROUP_CONCAT(t.name ORDER BY t.name SEPARATOR ', ')
-//          FROM ${P}term_relationships tr
-//          JOIN ${P}term_taxonomy tt ON tt.term_taxonomy_id = tr.term_taxonomy_id AND tt.taxonomy = 'product_cat'
-//          JOIN ${P}terms t ON t.term_id = tt.term_id
-//          WHERE tr.object_id = p.ID
-//        ) AS categories_text
-//      FROM ${P}posts p
-//      LEFT JOIN ${P}wc_product_meta_lookup ml ON ml.product_id = p.ID
-//      LEFT JOIN ${P}postmeta thumb
-//        ON thumb.post_id = p.ID AND thumb.meta_key = '_thumbnail_id'
-//      LEFT JOIN ${P}posts att ON att.ID = thumb.meta_value AND att.post_type = 'attachment'
-//      LEFT JOIN ${P}postmeta file_pm
-//        ON file_pm.post_id = att.ID AND file_pm.meta_key = '_wp_attached_file'
-//      WHERE ${where}
-//      ORDER BY ${sortCol} ${dir}
-//      LIMIT ? OFFSET ?`,
-//     [...params, limit, offset]
-//   );
+//   const [[{ total }]] =
+//     await pool.query(
+//       `
+//         SELECT
+//           COUNT(*) AS total
 
-//   return listResponse(rows, total, page, limit);
+//         FROM ${P}posts p
+
+//         LEFT JOIN
+//           ${P}wc_product_meta_lookup ml
+//         ON ml.product_id = p.ID
+
+//         WHERE ${where}
+//       `,
+//       params
+//     );
+
+//   /* =====================================================
+//      PRODUCTS
+//   ===================================================== */
+
+//   const [rows] =
+//     await pool.query(
+//       `
+//         SELECT
+
+//           p.ID,
+//           p.ID AS id,
+
+//           p.post_title AS name,
+
+//           p.post_name AS slug,
+
+//           p.post_status AS status,
+
+//           p.post_date AS created_at,
+
+//           p.post_modified AS updated_at,
+
+//           ml.sku,
+
+//           ml.min_price,
+
+//           ml.max_price,
+
+//           ml.stock_status,
+
+//           ml.stock_quantity,
+
+//           ml.onsale,
+
+//           ml.total_sales,
+
+//           ml.average_rating,
+
+//           ml.rating_count,
+
+//           att.guid AS image_url,
+
+//           file_pm.meta_value
+//             AS image_file,
+
+//           (
+//             SELECT
+//               t.name
+
+//             FROM
+//               ${P}term_relationships tr
+
+//             JOIN
+//               ${P}term_taxonomy tt
+
+//               ON
+//                 tt.term_taxonomy_id =
+//                 tr.term_taxonomy_id
+
+//               AND
+//                 tt.taxonomy =
+//                 'product_type'
+
+//             JOIN
+//               ${P}terms t
+
+//               ON
+//                 t.term_id =
+//                 tt.term_id
+
+//             WHERE
+//               tr.object_id = p.ID
+
+//             LIMIT 1
+
+//           ) AS product_type,
+
+//           (
+//             SELECT
+//               GROUP_CONCAT(
+//                 t.name
+//                 ORDER BY t.name
+//                 SEPARATOR ', '
+//               )
+
+//             FROM
+//               ${P}term_relationships tr
+
+//             JOIN
+//               ${P}term_taxonomy tt
+
+//               ON
+//                 tt.term_taxonomy_id =
+//                 tr.term_taxonomy_id
+
+//               AND
+//                 tt.taxonomy =
+//                 'product_cat'
+
+//             JOIN
+//               ${P}terms t
+
+//               ON
+//                 t.term_id =
+//                 tt.term_id
+
+//             WHERE
+//               tr.object_id = p.ID
+
+//           ) AS categories_text
+
+//         FROM ${P}posts p
+
+//         LEFT JOIN
+//           ${P}wc_product_meta_lookup ml
+
+//           ON ml.product_id = p.ID
+
+//         LEFT JOIN
+//           ${P}postmeta thumb
+
+//           ON thumb.post_id = p.ID
+
+//           AND thumb.meta_key =
+//               '_thumbnail_id'
+
+//         LEFT JOIN
+//           ${P}posts att
+
+//           ON att.ID =
+//              thumb.meta_value
+
+//           AND att.post_type =
+//               'attachment'
+
+//         LEFT JOIN
+//           ${P}postmeta file_pm
+
+//           ON file_pm.post_id =
+//              att.ID
+
+//           AND file_pm.meta_key =
+//               '_wp_attached_file'
+
+//         WHERE ${where}
+
+//         ORDER BY
+//           ${sortCol} ${dir}
+
+//         LIMIT ?
+//         OFFSET ?
+//       `,
+//       [
+//         ...params,
+//         limit,
+//         offset,
+//       ]
+//     );
+
+//   return listResponse(
+//     rows,
+//     total,
+//     page,
+//     limit
+//   );
 // }
 
-// async function getById(id) {
-//   const [[product]] = await pool.query(
-//     `SELECT
-//        p.ID, p.ID AS id,
-//        p.post_title AS name,
-//        p.post_name AS slug,
-//        p.post_content AS description,
-//        p.post_excerpt AS short_description,
-//        p.post_status AS status,
-//        p.post_date AS created_at,
-//        p.post_modified AS updated_at,
-//        ml.sku, ml.min_price, ml.max_price, ml.stock_status, ml.stock_quantity,
-//        ml.onsale, ml.total_sales, ml.average_rating, ml.rating_count,
-//        ml.virtual, ml.downloadable, ml.tax_status, ml.tax_class
-//      FROM ${P}posts p
-//      LEFT JOIN ${P}wc_product_meta_lookup ml ON ml.product_id = p.ID
-//      WHERE p.ID = ? AND p.post_type = 'product'`,
-//     [id]
-//   );
-//   if (!product) throw httpError(404, 'Product not found');
+// async function getById(
+//   id,
+//   options = {}
+// ) {
+//   const {
+//     publicOnly = false,
+//   } = options;
 
-//   const metaMap = await getPostMetaMap(pool, P, id);
-//   const [variations] = await pool.query(
-//     `SELECT
-//        v.ID, v.post_title AS name, v.post_status AS status,
-//        pm_price.meta_value AS price,
-//        pm_reg.meta_value AS regular_price,
-//        pm_sale.meta_value AS sale_price,
-//        pm_sku.meta_value AS sku,
-//        pm_stock.meta_value AS stock_quantity,
-//        pm_ss.meta_value AS stock_status,
-//        pm_size.meta_value AS size
-//      FROM ${P}posts v
-//      LEFT JOIN ${P}postmeta pm_price ON pm_price.post_id = v.ID AND pm_price.meta_key = '_price'
-//      LEFT JOIN ${P}postmeta pm_reg   ON pm_reg.post_id   = v.ID AND pm_reg.meta_key   = '_regular_price'
-//      LEFT JOIN ${P}postmeta pm_sale  ON pm_sale.post_id  = v.ID AND pm_sale.meta_key  = '_sale_price'
-//      LEFT JOIN ${P}postmeta pm_sku   ON pm_sku.post_id   = v.ID AND pm_sku.meta_key   = '_sku'
-//      LEFT JOIN ${P}postmeta pm_stock ON pm_stock.post_id = v.ID AND pm_stock.meta_key = '_stock'
-//      LEFT JOIN ${P}postmeta pm_ss    ON pm_ss.post_id    = v.ID AND pm_ss.meta_key    = '_stock_status'
-//      LEFT JOIN ${P}postmeta pm_size  ON pm_size.post_id  = v.ID AND pm_size.meta_key  = 'attribute_pa_size'
-//      WHERE v.post_parent = ? AND v.post_type = 'product_variation'
-//      ORDER BY v.menu_order, v.ID`,
-//     [id]
-//   );
+//   /* =====================================================
+//      MAIN PRODUCT
+//   ===================================================== */
 
-//   const [categories] = await pool.query(
-//     `SELECT t.term_id, t.name, t.slug, tt.term_taxonomy_id
-//      FROM ${P}term_relationships tr
-//      JOIN ${P}term_taxonomy tt ON tt.term_taxonomy_id = tr.term_taxonomy_id
-//      JOIN ${P}terms t ON t.term_id = tt.term_id
-//      WHERE tr.object_id = ? AND tt.taxonomy = 'product_cat'`,
-//     [id]
-//   );
+//   const [[product]] =
+//     await pool.query(
+//       `
+//         SELECT
 
-//   const [tags] = await pool.query(
-//     `SELECT t.term_id, t.name, t.slug
-//      FROM ${P}term_relationships tr
-//      JOIN ${P}term_taxonomy tt ON tt.term_taxonomy_id = tr.term_taxonomy_id
-//      JOIN ${P}terms t ON t.term_id = tt.term_id
-//      WHERE tr.object_id = ? AND tt.taxonomy = 'product_tag'`,
-//     [id]
-//   );
+//           p.ID,
+//           p.ID AS id,
 
-//   const [[typeRow]] = await pool.query(
-//     `SELECT t.name, t.slug
-//      FROM ${P}term_relationships tr
-//      JOIN ${P}term_taxonomy tt ON tt.term_taxonomy_id = tr.term_taxonomy_id
-//      JOIN ${P}terms t ON t.term_id = tt.term_id
-//      WHERE tr.object_id = ? AND tt.taxonomy = 'product_type'
-//      LIMIT 1`,
-//     [id]
-//   );
+//           p.post_title AS name,
 
-//   const [visibility] = await pool.query(
-//     `SELECT t.name, t.slug
-//      FROM ${P}term_relationships tr
-//      JOIN ${P}term_taxonomy tt ON tt.term_taxonomy_id = tr.term_taxonomy_id
-//      JOIN ${P}terms t ON t.term_id = tt.term_id
-//      WHERE tr.object_id = ? AND tt.taxonomy = 'product_visibility'`,
-//     [id]
-//   );
+//           p.post_name AS slug,
 
-//   const thumb = metaMap._thumbnail_id || null;
-//   const galleryIds = metaMap._product_image_gallery
-//     ? metaMap._product_image_gallery.split(',').map((s) => s.trim()).filter(Boolean)
-//     : [];
-//   const imageIds = [...new Set([thumb, ...galleryIds].filter(Boolean))];
-//   let images = [];
-//   if (imageIds.length) {
-//     const [atts] = await pool.query(
-//       `SELECT a.ID, a.post_title AS title, a.guid, f.meta_value AS file
-//        FROM ${P}posts a
-//        LEFT JOIN ${P}postmeta f ON f.post_id = a.ID AND f.meta_key = '_wp_attached_file'
-//        WHERE a.ID IN (${imageIds.map(() => '?').join(',')}) AND a.post_type = 'attachment'`,
-//       imageIds
+//           p.post_content
+//             AS description,
+
+//           p.post_excerpt
+//             AS short_description,
+
+//           p.post_status
+//             AS status,
+
+//           p.post_date
+//             AS created_at,
+
+//           p.post_modified
+//             AS updated_at,
+
+//           ml.sku,
+
+//           ml.min_price,
+
+//           ml.max_price,
+
+//           ml.stock_status,
+
+//           ml.stock_quantity,
+
+//           ml.onsale,
+
+//           ml.total_sales,
+
+//           ml.average_rating,
+
+//           ml.rating_count,
+
+//           ml.virtual,
+
+//           ml.downloadable,
+
+//           ml.tax_status,
+
+//           ml.tax_class
+
+//         FROM ${P}posts p
+
+//         LEFT JOIN
+//           ${P}wc_product_meta_lookup ml
+
+//           ON ml.product_id = p.ID
+
+//         WHERE
+//           p.ID = ?
+
+//           AND
+//           p.post_type = 'product'
+
+//           ${
+//             publicOnly
+//               ? "AND p.post_status = 'publish'"
+//               : ''
+//           }
+//       `,
+//       [id]
 //     );
+
+//   if (!product) {
+//     throw httpError(
+//       404,
+//       'Product not found'
+//     );
+//   }
+
+//   /* =====================================================
+//      META
+//   ===================================================== */
+
+//   const metaMap =
+//     await getPostMetaMap(
+//       pool,
+//       P,
+//       id
+//     );
+
+//   /* =====================================================
+//      VARIATIONS / SIZES
+
+//      Out-of-stock variations stay visible.
+
+//      Only deleted/draft variation is hidden
+//      from customer side.
+//   ===================================================== */
+
+//   const [variations] =
+//     await pool.query(
+//       `
+//         SELECT
+
+//           v.ID,
+
+//           v.post_title AS name,
+
+//           v.post_status AS status,
+
+//           pm_price.meta_value
+//             AS price,
+
+//           pm_reg.meta_value
+//             AS regular_price,
+
+//           pm_sale.meta_value
+//             AS sale_price,
+
+//           pm_sku.meta_value
+//             AS sku,
+
+//           pm_stock.meta_value
+//             AS stock_quantity,
+
+//           pm_ss.meta_value
+//             AS stock_status,
+
+//           pm_size.meta_value
+//             AS size
+
+//         FROM ${P}posts v
+
+//         LEFT JOIN
+//           ${P}postmeta pm_price
+
+//           ON
+//             pm_price.post_id = v.ID
+
+//           AND
+//             pm_price.meta_key =
+//             '_price'
+
+//         LEFT JOIN
+//           ${P}postmeta pm_reg
+
+//           ON
+//             pm_reg.post_id = v.ID
+
+//           AND
+//             pm_reg.meta_key =
+//             '_regular_price'
+
+//         LEFT JOIN
+//           ${P}postmeta pm_sale
+
+//           ON
+//             pm_sale.post_id = v.ID
+
+//           AND
+//             pm_sale.meta_key =
+//             '_sale_price'
+
+//         LEFT JOIN
+//           ${P}postmeta pm_sku
+
+//           ON
+//             pm_sku.post_id = v.ID
+
+//           AND
+//             pm_sku.meta_key =
+//             '_sku'
+
+//         LEFT JOIN
+//           ${P}postmeta pm_stock
+
+//           ON
+//             pm_stock.post_id = v.ID
+
+//           AND
+//             pm_stock.meta_key =
+//             '_stock'
+
+//         LEFT JOIN
+//           ${P}postmeta pm_ss
+
+//           ON
+//             pm_ss.post_id = v.ID
+
+//           AND
+//             pm_ss.meta_key =
+//             '_stock_status'
+
+//         LEFT JOIN
+//           ${P}postmeta pm_size
+
+//           ON
+//             pm_size.post_id = v.ID
+
+//           AND
+//             pm_size.meta_key =
+//             'attribute_pa_size'
+
+//         WHERE
+//           v.post_parent = ?
+
+//           AND
+//           v.post_type =
+//           'product_variation'
+
+//           ${
+//             publicOnly
+//               ? "AND v.post_status = 'publish'"
+//               : ''
+//           }
+
+//         ORDER BY
+//           v.menu_order,
+//           v.ID
+//       `,
+//       [id]
+//     );
+
+//   /* =====================================================
+//      CATEGORIES
+//   ===================================================== */
+
+//   const [categories] =
+//     await pool.query(
+//       `
+//         SELECT
+
+//           t.term_id,
+
+//           t.name,
+
+//           t.slug,
+
+//           tt.term_taxonomy_id
+
+//         FROM
+//           ${P}term_relationships tr
+
+//         JOIN
+//           ${P}term_taxonomy tt
+
+//           ON
+//             tt.term_taxonomy_id =
+//             tr.term_taxonomy_id
+
+//         JOIN
+//           ${P}terms t
+
+//           ON
+//             t.term_id =
+//             tt.term_id
+
+//         WHERE
+//           tr.object_id = ?
+
+//           AND
+//           tt.taxonomy =
+//           'product_cat'
+//       `,
+//       [id]
+//     );
+
+//   /* =====================================================
+//      TAGS
+//   ===================================================== */
+
+//   const [tags] =
+//     await pool.query(
+//       `
+//         SELECT
+
+//           t.term_id,
+
+//           t.name,
+
+//           t.slug
+
+//         FROM
+//           ${P}term_relationships tr
+
+//         JOIN
+//           ${P}term_taxonomy tt
+
+//           ON
+//             tt.term_taxonomy_id =
+//             tr.term_taxonomy_id
+
+//         JOIN
+//           ${P}terms t
+
+//           ON
+//             t.term_id =
+//             tt.term_id
+
+//         WHERE
+//           tr.object_id = ?
+
+//           AND
+//           tt.taxonomy =
+//           'product_tag'
+//       `,
+//       [id]
+//     );
+
+//   /* =====================================================
+//      PRODUCT TYPE
+//   ===================================================== */
+
+//   const [[typeRow]] =
+//     await pool.query(
+//       `
+//         SELECT
+//           t.name,
+//           t.slug
+
+//         FROM
+//           ${P}term_relationships tr
+
+//         JOIN
+//           ${P}term_taxonomy tt
+
+//           ON
+//             tt.term_taxonomy_id =
+//             tr.term_taxonomy_id
+
+//         JOIN
+//           ${P}terms t
+
+//           ON
+//             t.term_id =
+//             tt.term_id
+
+//         WHERE
+//           tr.object_id = ?
+
+//           AND
+//           tt.taxonomy =
+//           'product_type'
+
+//         LIMIT 1
+//       `,
+//       [id]
+//     );
+
+//   /* =====================================================
+//      VISIBILITY
+//   ===================================================== */
+
+//   const [visibility] =
+//     await pool.query(
+//       `
+//         SELECT
+//           t.name,
+//           t.slug
+
+//         FROM
+//           ${P}term_relationships tr
+
+//         JOIN
+//           ${P}term_taxonomy tt
+
+//           ON
+//             tt.term_taxonomy_id =
+//             tr.term_taxonomy_id
+
+//         JOIN
+//           ${P}terms t
+
+//           ON
+//             t.term_id =
+//             tt.term_id
+
+//         WHERE
+//           tr.object_id = ?
+
+//           AND
+//           tt.taxonomy =
+//           'product_visibility'
+//       `,
+//       [id]
+//     );
+
+//   /* =====================================================
+//      IMAGES
+//   ===================================================== */
+
+//   const thumb =
+//     metaMap._thumbnail_id ||
+//     null;
+
+//   const galleryIds =
+//     metaMap._product_image_gallery
+//       ? metaMap._product_image_gallery
+//           .split(',')
+//           .map((s) => s.trim())
+//           .filter(Boolean)
+//       : [];
+
+//   const imageIds = [
+//     ...new Set(
+//       [
+//         thumb,
+//         ...galleryIds,
+//       ].filter(Boolean)
+//     ),
+//   ];
+
+//   let images = [];
+
+//   if (imageIds.length) {
+//     const [atts] =
+//       await pool.query(
+//         `
+//           SELECT
+
+//             a.ID,
+
+//             a.post_title AS title,
+
+//             a.guid,
+
+//             f.meta_value AS file
+
+//           FROM ${P}posts a
+
+//           LEFT JOIN
+//             ${P}postmeta f
+
+//             ON
+//               f.post_id = a.ID
+
+//             AND
+//               f.meta_key =
+//               '_wp_attached_file'
+
+//           WHERE
+//             a.ID IN (
+//               ${imageIds
+//                 .map(() => '?')
+//                 .join(',')}
+//             )
+
+//             AND
+//             a.post_type =
+//             'attachment'
+//         `,
+//         imageIds
+//       );
+
 //     images = atts;
 //   }
 
-//   const featuredImage = images.find((i) => String(i.ID) === String(thumb)) || null;
-//   const gallery = images.filter((i) => galleryIds.includes(String(i.ID)));
+//   const featuredImage =
+//     images.find(
+//       (item) =>
+//         String(item.ID) ===
+//         String(thumb)
+//     ) || null;
+
+//   const gallery =
+//     images.filter(
+//       (item) =>
+//         galleryIds.includes(
+//           String(item.ID)
+//         )
+//     );
+
+//   /* =====================================================
+//      FINAL RESPONSE
+//   ===================================================== */
 
 //   return {
 //     ...product,
-//     product_type: typeRow?.slug || typeRow?.name || null,
-//     type: typeRow?.slug || null,
-//     regular_price: metaMap._regular_price ?? product.min_price,
-//     sale_price: metaMap._sale_price || '',
-//     price: metaMap._price ?? product.min_price,
-//     manage_stock: metaMap._manage_stock || 'no',
-//     backorders: metaMap._backorders || 'no',
-//     weight: metaMap._weight || '',
-//     length: metaMap._length || '',
-//     width: metaMap._width || '',
-//     height: metaMap._height || '',
-//     post_content: product.description,
-//     post_status: product.status,
-//     thumbnail_id: thumb,
+
+//     product_type:
+//       typeRow?.slug ||
+//       typeRow?.name ||
+//       null,
+
+//     type:
+//       typeRow?.slug ||
+//       null,
+
+//     regular_price:
+//       metaMap._regular_price ??
+//       product.min_price,
+
+//     sale_price:
+//       metaMap._sale_price ||
+//       '',
+
+//     price:
+//       metaMap._price ??
+//       product.min_price,
+
+//     manage_stock:
+//       metaMap._manage_stock ||
+//       'no',
+
+//     backorders:
+//       metaMap._backorders ||
+//       'no',
+
+//     weight:
+//       metaMap._weight ||
+//       '',
+
+//     length:
+//       metaMap._length ||
+//       '',
+
+//     width:
+//       metaMap._width ||
+//       '',
+
+//     height:
+//       metaMap._height ||
+//       '',
+
+//     post_content:
+//       product.description,
+
+//     post_status:
+//       product.status,
+
+//     thumbnail_id:
+//       thumb,
+
 //     galleryIds,
-//     featured_image: featuredImage,
+
+//     featured_image:
+//       featuredImage,
+
 //     gallery,
+
 //     variations,
+
 //     categories,
+
 //     tags,
+
 //     visibility,
-//     featured: visibility.some((v) => v.slug === 'featured'),
+
+//     featured:
+//       visibility.some(
+//         (item) =>
+//           item.slug === 'featured'
+//       ),
+
 //     images,
-//     meta: metaMap,
+
+//     meta:
+//       metaMap,
 //   };
 // }
 
@@ -2219,3 +3029,11 @@ module.exports = {
 //   DEFAULT_CAT_TT,
 //   UNCATEGORIZED_TT,
 // };
+
+
+
+
+
+
+
+

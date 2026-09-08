@@ -28,7 +28,7 @@ export default function ProductsList() {
   const [category, setCategory] = useState('');
   const [categories, setCategories] = useState([]);
   const [page, setPage] = useState(0);
-  const [limit, setLimit] = useState(20);
+  const [limit, setLimit] = useState(100);
   const [state, setState] = useState({
     rows: [],
     total: 0,
