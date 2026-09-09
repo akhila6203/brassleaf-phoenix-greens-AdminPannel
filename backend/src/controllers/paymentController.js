@@ -9,9 +9,16 @@ async function getById(req, res) {
 async function getByOrderId(req, res) {
   res.json(await paymentService.getById(parseInt(req.params.orderId || req.params.id, 10)));
 }
+// async function statsSummary(req, res) {
+//   res.json(await paymentService.statsSummary());
+// }
+
 async function statsSummary(req, res) {
-  res.json(await paymentService.statsSummary());
+  res.json(
+    await paymentService.statsSummary(req)
+  );
 }
+
 async function reconcile(req, res) {
   res.json(await paymentService.reconcile(parseInt(req.params.id, 10), req.body || {}));
 }

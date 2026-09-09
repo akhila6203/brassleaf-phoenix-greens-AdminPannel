@@ -1,312 +1,415 @@
 const pool = require('../config/db');
 const P = require('../config/prefix');
+const { parseList, listResponse } = require('../utils/listParams');
+const {
+  resolveInventoryPeriod,
+  formatKolkataDate,
+  toKolkataParts,
+} = require('../utils/dateRange');
+
+const SUCCESS_STATUSES = ['wc-processing', 'wc-completed'];
+
+const SORT_MAP = {
+  newest: { col: 'o.date_created_gmt', dir: 'DESC' },
+  oldest: { col: 'o.date_created_gmt', dir: 'ASC' },
+  invoice: { col: 'invoice_number', dir: 'ASC' },
+  order: { col: 'o.id', dir: 'DESC' },
+  product: { col: 'oi.order_item_name', dir: 'ASC' },
+  value_high: { col: 'line_total_num', dir: 'DESC' },
+  value_low: { col: 'line_total_num', dir: 'ASC' },
+  gst_high: { col: 'line_tax_num', dir: 'DESC' },
+  gst_low: { col: 'line_tax_num', dir: 'ASC' },
+};
+
+const LINE_ITEM_FROM = `
+  FROM ${P}wc_orders o
+  INNER JOIN ${P}woocommerce_order_items oi
+    ON oi.order_id = o.id
+   AND oi.order_item_type = 'line_item'
+  LEFT JOIN ${P}woocommerce_order_itemmeta oim_qty
+    ON oim_qty.order_item_id = oi.order_item_id
+   AND oim_qty.meta_key = '_qty'
+  LEFT JOIN ${P}woocommerce_order_itemmeta oim_sub
+    ON oim_sub.order_item_id = oi.order_item_id
+   AND oim_sub.meta_key = '_line_subtotal'
+  LEFT JOIN ${P}woocommerce_order_itemmeta oim_tot
+    ON oim_tot.order_item_id = oi.order_item_id
+   AND oim_tot.meta_key = '_line_total'
+  LEFT JOIN ${P}woocommerce_order_itemmeta oim_tax
+    ON oim_tax.order_item_id = oi.order_item_id
+   AND oim_tax.meta_key = '_line_tax'
+  LEFT JOIN ${P}woocommerce_order_itemmeta oim_sku
+    ON oim_sku.order_item_id = oi.order_item_id
+   AND oim_sku.meta_key = '_sku'
+  LEFT JOIN ${P}woocommerce_order_itemmeta oim_pid
+    ON oim_pid.order_item_id = oi.order_item_id
+   AND oim_pid.meta_key = '_product_id'
+  LEFT JOIN ${P}woocommerce_order_itemmeta oim_size
+    ON oim_size.order_item_id = oi.order_item_id
+   AND oim_size.meta_key = 'pa_size'
+  LEFT JOIN ${P}wcpdf_invoice_number inv
+    ON inv.order_id = o.id
+  LEFT JOIN ${P}wc_orders_meta invm
+    ON invm.order_id = o.id
+   AND invm.meta_key = '_wcpdf_invoice_number'
+  LEFT JOIN ${P}wc_product_meta_lookup ml
+    ON ml.product_id = CAST(oim_pid.meta_value AS UNSIGNED)
+  LEFT JOIN ${P}postmeta pm_hsn
+    ON pm_hsn.post_id = CAST(oim_pid.meta_value AS UNSIGNED)
+   AND pm_hsn.meta_key = 'hsn_prod_id'
+`;
 
 function roundMoney(value) {
   return Math.round((Number(value) || 0) * 100) / 100;
 }
 
-function resolvePrice(regular, sale, price) {
-  const saleValue = sale == null || sale === '' ? '' : String(sale);
-  if (saleValue !== '' && !Number.isNaN(Number(saleValue))) {
-    return roundMoney(Number(saleValue));
-  }
-
-  const regularValue = regular == null || regular === '' ? '' : String(regular);
-  if (regularValue !== '' && !Number.isNaN(Number(regularValue))) {
-    return roundMoney(Number(regularValue));
-  }
-
-  return roundMoney(price);
+function resolveSort(req) {
+  const key = SORT_MAP[req.query.sort] ? req.query.sort : 'newest';
+  return SORT_MAP[key];
 }
 
-function resolveGstPercent(meta = {}, taxStatus = 'taxable') {
-  const raw = meta.gst_percent ?? meta._gst_percent;
-  if (raw != null && raw !== '') {
-    const parsed = Number(raw);
-    if (!Number.isNaN(parsed) && parsed >= 0) {
-      return parsed;
-    }
-  }
-
-  const status = meta._tax_status ?? taxStatus;
-  if (status === 'none' || status === 'shipping') {
-    return 0;
-  }
-
-  return 5;
-}
-
-function splitInclusive(total, gstPercent) {
-  const inclusiveTotal = roundMoney(total);
-  if (inclusiveTotal <= 0 || !gstPercent) {
-    return {
-      price: inclusiveTotal,
-      gst: 0,
-      total: inclusiveTotal,
-    };
-  }
-
-  const price = roundMoney((inclusiveTotal * 100) / (100 + gstPercent));
-  const gst = roundMoney(inclusiveTotal - price);
-
-  return {
-    price,
-    gst,
-    total: inclusiveTotal,
+function buildFilterMeta(range) {
+  const filter = {
+    period: range.period,
+    label: range.label,
   };
+
+  if (range.date) filter.date = range.date;
+  if (range.date_from) filter.date_from = range.date_from;
+  if (range.date_to) filter.date_to = range.date_to;
+  if (range.year != null) filter.year = range.year;
+  if (range.month != null) filter.month = range.month;
+
+  return filter;
 }
 
-function buildVariantLabel(variation) {
-  if (variation.size) return String(variation.size);
-  if (variation.name && variation.name !== 'Product') return String(variation.name);
-  return '—';
-}
-
-const SORT_HANDLERS = {
-  name_asc: (a, b) => a.product_name.localeCompare(b.product_name) || a.variant_label.localeCompare(b.variant_label),
-  price_low: (a, b) => a.total - b.total || a.product_name.localeCompare(b.product_name),
-  price_high: (a, b) => b.total - a.total || a.product_name.localeCompare(b.product_name),
-  gst_low: (a, b) => a.gst - b.gst || a.product_name.localeCompare(b.product_name),
-  gst_high: (a, b) => b.gst - a.gst || a.product_name.localeCompare(b.product_name),
-};
-
-async function fetchProductMetaMap(productIds) {
-  if (!productIds.length) return new Map();
+async function getAvailableYears() {
+  const today = toKolkataParts(new Date());
+  const currentYear = today.year;
 
   const [rows] = await pool.query(
-    `SELECT post_id, meta_key, meta_value
-     FROM ${P}postmeta
-     WHERE post_id IN (?)
-       AND meta_key IN (
-         '_regular_price',
-         '_sale_price',
-         '_price',
-         'gst_percent',
-         '_tax_status'
-       )`,
-    [productIds]
+    `SELECT DISTINCT YEAR(o.date_created_gmt) AS yr
+     FROM ${P}wc_orders o
+     WHERE o.type = 'shop_order'
+       AND o.status IN (?, ?)
+     ORDER BY yr DESC`,
+    SUCCESS_STATUSES
   );
 
-  const map = new Map();
-  for (const row of rows) {
-    if (!map.has(row.post_id)) {
-      map.set(row.post_id, {});
-    }
-    map.get(row.post_id)[row.meta_key] = row.meta_value;
+  const years = rows.map((row) => Number(row.yr)).filter(Boolean);
+  if (!years.includes(currentYear)) {
+    years.unshift(currentYear);
+    years.sort((a, b) => b - a);
   }
 
-  return map;
+  return years.length ? years : [currentYear];
 }
 
-async function fetchProductTypes(productIds) {
-  if (!productIds.length) return new Map();
-
-  const [rows] = await pool.query(
-    `SELECT tr.object_id AS product_id, t.slug AS type_slug
-     FROM ${P}term_relationships tr
-     JOIN ${P}term_taxonomy tt ON tt.term_taxonomy_id = tr.term_taxonomy_id
-     JOIN ${P}terms t ON t.term_id = tt.term_id
-     WHERE tt.taxonomy = 'product_type'
-       AND tr.object_id IN (?)`,
-    [productIds]
-  );
-
-  const map = new Map();
-  for (const row of rows) {
-    map.set(Number(row.product_id), row.type_slug || 'simple');
-  }
-  return map;
-}
-
-async function findProductIdsByVariationSearch(search) {
-  const [rows] = await pool.query(
-    `SELECT DISTINCT v.post_parent AS product_id
-     FROM ${P}posts v
-     LEFT JOIN ${P}postmeta pm_sku
-       ON pm_sku.post_id = v.ID AND pm_sku.meta_key = '_sku'
-     LEFT JOIN ${P}postmeta pm_size
-       ON pm_size.post_id = v.ID AND pm_size.meta_key = 'attribute_pa_size'
-     WHERE v.post_type = 'product_variation'
-       AND v.post_status NOT IN ('trash', 'auto-draft')
-       AND (
-         v.post_title LIKE ?
-         OR pm_sku.meta_value LIKE ?
-         OR pm_size.meta_value LIKE ?
-       )`,
-    [`%${search}%`, `%${search}%`, `%${search}%`]
-  );
-
-  return rows.map((row) => Number(row.product_id)).filter(Boolean);
-}
-
-async function fetchProducts(search) {
-  const params = [];
+function buildWhereClause(range, search) {
+  const params = [...SUCCESS_STATUSES, range.start, range.end];
   let where = `
-    p.post_type = 'product'
-    AND p.post_status NOT IN ('auto-draft', 'trash')
-    AND p.post_status IN ('publish', 'draft', 'private', 'pending')
+    o.type = 'shop_order'
+    AND o.status IN (?, ?)
+    AND o.date_created_gmt >= ?
+    AND o.date_created_gmt <= ?
   `;
 
   if (search) {
-    const variationProductIds = await findProductIdsByVariationSearch(search);
-    if (variationProductIds.length) {
-      where += ` AND (p.post_title LIKE ? OR ml.sku LIKE ? OR p.ID IN (?))`;
-      params.push(`%${search}%`, `%${search}%`, variationProductIds);
-    } else {
-      where += ` AND (p.post_title LIKE ? OR ml.sku LIKE ?)`;
-      params.push(`%${search}%`, `%${search}%`);
-    }
-  }
-
-  const [rows] = await pool.query(
-    `SELECT
-       p.ID AS id,
-       p.post_title AS name,
-       ml.sku,
-       ml.tax_status
-     FROM ${P}posts p
-     LEFT JOIN ${P}wc_product_meta_lookup ml ON ml.product_id = p.ID
-     WHERE ${where}
-     ORDER BY p.post_title ASC`,
-    params
-  );
-
-  return rows;
-}
-
-async function fetchVariations(productIds, search) {
-  if (!productIds.length) return [];
-
-  const params = [productIds];
-  let searchClause = '';
-
-  if (search) {
-    searchClause = `
+    where += `
       AND (
-        v.post_title LIKE ?
-        OR pm_sku.meta_value LIKE ?
-        OR pm_size.meta_value LIKE ?
+        oi.order_item_name LIKE ?
+        OR COALESCE(NULLIF(oim_sku.meta_value, ''), ml.sku, '') LIKE ?
+        OR CAST(o.id AS CHAR) LIKE ?
+        OR CAST(COALESCE(inv.calculated_number, invm.meta_value) AS CHAR) LIKE ?
+        OR COALESCE(pm_hsn.meta_value, '') LIKE ?
+        OR COALESCE(oim_size.meta_value, '') LIKE ?
       )
     `;
-    params.push(`%${search}%`, `%${search}%`, `%${search}%`);
+    const q = `%${search}%`;
+    params.push(q, q, q, q, q, q);
   }
+
+  return { where, params };
+}
+
+function formatSkuHsn(sku, hsn) {
+  const skuValue = (sku || '').trim();
+  const hsnValue = (hsn || '').trim();
+
+  if (skuValue && hsnValue) {
+    return `${skuValue} / ${hsnValue}`;
+  }
+  if (skuValue) return skuValue;
+  if (hsnValue) return hsnValue;
+  return '—';
+}
+
+async function fetchOrderTaxMap(orderIds) {
+  const map = new Map();
+  if (!orderIds.length) return map;
 
   const [rows] = await pool.query(
     `SELECT
-       v.post_parent AS product_id,
-       v.ID AS variation_id,
-       v.post_title AS name,
-       pm_price.meta_value AS price,
-       pm_reg.meta_value AS regular_price,
-       pm_sale.meta_value AS sale_price,
-       pm_sku.meta_value AS sku,
-       pm_size.meta_value AS size
-     FROM ${P}posts v
-     LEFT JOIN ${P}postmeta pm_price
-       ON pm_price.post_id = v.ID AND pm_price.meta_key = '_price'
-     LEFT JOIN ${P}postmeta pm_reg
-       ON pm_reg.post_id = v.ID AND pm_reg.meta_key = '_regular_price'
-     LEFT JOIN ${P}postmeta pm_sale
-       ON pm_sale.post_id = v.ID AND pm_sale.meta_key = '_sale_price'
-     LEFT JOIN ${P}postmeta pm_sku
-       ON pm_sku.post_id = v.ID AND pm_sku.meta_key = '_sku'
-     LEFT JOIN ${P}postmeta pm_size
-       ON pm_size.post_id = v.ID AND pm_size.meta_key = 'attribute_pa_size'
-     WHERE v.post_type = 'product_variation'
-       AND v.post_status NOT IN ('trash', 'auto-draft')
-       AND v.post_parent IN (?)
-       ${searchClause}
-     ORDER BY v.menu_order ASC, v.ID ASC`,
+       oi.order_id,
+       oi.order_item_name,
+       MAX(CASE WHEN oim.meta_key = 'tax_amount' THEN oim.meta_value END) AS tax_amount,
+       MAX(CASE WHEN oim.meta_key = 'rate_percent' THEN oim.meta_value END) AS rate_percent
+     FROM ${P}woocommerce_order_items oi
+     LEFT JOIN ${P}woocommerce_order_itemmeta oim
+       ON oim.order_item_id = oi.order_item_id
+     WHERE oi.order_id IN (?)
+       AND oi.order_item_type = 'tax'
+     GROUP BY oi.order_id, oi.order_item_id, oi.order_item_name`,
+    [orderIds]
+  );
+
+  for (const row of rows) {
+    const orderId = Number(row.order_id);
+    if (!map.has(orderId)) {
+      map.set(orderId, {
+        cgst: 0,
+        sgst: 0,
+        igst: 0,
+        total: 0,
+        cgstPercent: 0,
+        sgstPercent: 0,
+        igstPercent: 0,
+      });
+    }
+
+    const entry = map.get(orderId);
+    const amount = roundMoney(row.tax_amount);
+    const rate = Number(row.rate_percent) || 0;
+    const name = String(row.order_item_name || '').toUpperCase();
+
+    if (name.includes('IGST')) {
+      entry.igst = roundMoney(entry.igst + amount);
+      entry.igstPercent = rate || entry.igstPercent;
+    } else if (name.includes('SGST')) {
+      entry.sgst = roundMoney(entry.sgst + amount);
+      entry.sgstPercent = rate || entry.sgstPercent;
+    } else if (name.includes('CGST')) {
+      entry.cgst = roundMoney(entry.cgst + amount);
+      entry.cgstPercent = rate || entry.cgstPercent;
+    } else {
+      entry.cgst = roundMoney(entry.cgst + amount / 2);
+      entry.sgst = roundMoney(entry.sgst + amount / 2);
+    }
+
+    entry.total = roundMoney(entry.cgst + entry.sgst + entry.igst);
+  }
+
+  return map;
+}
+
+function allocateLineTax(lineTax, orderTax) {
+  const totalGst = roundMoney(lineTax);
+  if (totalGst <= 0) {
+    return {
+      sgst_amount: 0,
+      cgst_amount: 0,
+      igst_amount: 0,
+      sgst_percent: 0,
+      cgst_percent: 0,
+      igst_percent: 0,
+    };
+  }
+
+  if (orderTax.total > 0) {
+    let sgstAmount = roundMoney(totalGst * (orderTax.sgst / orderTax.total));
+    let cgstAmount = roundMoney(totalGst * (orderTax.cgst / orderTax.total));
+    let igstAmount = roundMoney(totalGst * (orderTax.igst / orderTax.total));
+    const diff = roundMoney(totalGst - sgstAmount - cgstAmount - igstAmount);
+
+    if (diff !== 0) {
+      if (orderTax.igst > 0) igstAmount = roundMoney(igstAmount + diff);
+      else if (orderTax.cgst >= orderTax.sgst) cgstAmount = roundMoney(cgstAmount + diff);
+      else sgstAmount = roundMoney(sgstAmount + diff);
+    }
+
+    return {
+      sgst_amount: sgstAmount,
+      cgst_amount: cgstAmount,
+      igst_amount: igstAmount,
+      sgst_percent: orderTax.sgstPercent || (sgstAmount > 0 ? 2.5 : 0),
+      cgst_percent: orderTax.cgstPercent || (cgstAmount > 0 ? 2.5 : 0),
+      igst_percent: orderTax.igstPercent || (igstAmount > 0 ? orderTax.igstPercent : 0),
+    };
+  }
+
+  const cgstAmount = roundMoney(totalGst / 2);
+  const sgstAmount = roundMoney(totalGst - cgstAmount);
+
+  return {
+    sgst_amount: sgstAmount,
+    cgst_amount: cgstAmount,
+    igst_amount: 0,
+    sgst_percent: 2.5,
+    cgst_percent: 2.5,
+    igst_percent: 0,
+  };
+}
+
+function mapLineRow(raw, orderTaxMap) {
+  const quantity = Number(raw.quantity) || 0;
+  const value = roundMoney(raw.line_subtotal || raw.line_total);
+  const totalGst = roundMoney(raw.line_tax);
+  const rate = quantity > 0 ? roundMoney(value / quantity) : roundMoney(value);
+  const netValue = roundMoney(value - totalGst);
+  const taxableValue = roundMoney(netValue);
+
+  const orderTax = orderTaxMap.get(Number(raw.order_id)) || {
+    cgst: 0,
+    sgst: 0,
+    igst: 0,
+    total: 0,
+    cgstPercent: 0,
+    sgstPercent: 0,
+    igstPercent: 0,
+  };
+
+  const split = allocateLineTax(totalGst, orderTax);
+
+  let gstPercent = 0;
+  if (taxableValue > 0 && totalGst > 0) {
+    gstPercent = roundMoney((totalGst / taxableValue) * 100);
+  } else {
+    gstPercent = roundMoney(
+      split.sgst_percent + split.cgst_percent + split.igst_percent
+    );
+  }
+
+  const invoiceNumber =
+    raw.invoice_number != null && raw.invoice_number !== ''
+      ? `#${raw.invoice_number}`
+      : '—';
+
+  let productName = raw.product_name || '';
+  if (raw.size) {
+    productName = productName.includes(String(raw.size))
+      ? productName
+      : `${productName} (${raw.size})`.trim();
+  }
+
+  return {
+    order_item_id: raw.order_item_id,
+    date: raw.order_date,
+    invoice_number: invoiceNumber,
+    order_number: `#${raw.order_id}`,
+    product_name: productName,
+    sku_hsn: formatSkuHsn(raw.sku, raw.hsn),
+    quantity,
+    rate,
+    value,
+    tax_amount: totalGst,
+    gst_percent: gstPercent,
+    taxable_value: taxableValue,
+    sgst_percent: split.sgst_percent,
+    cgst_percent: split.cgst_percent,
+    igst_percent: split.igst_percent,
+    sgst_amount: split.sgst_amount,
+    cgst_amount: split.cgst_amount,
+    igst_amount: split.igst_amount,
+    total_gst: totalGst,
+    net_value: netValue,
+  };
+}
+
+async function fetchLineRows(range, search, sort, pagination = null) {
+  const { where, params } = buildWhereClause(range, search);
+
+  const [[{ total }]] = await pool.query(
+    `SELECT COUNT(*) AS total ${LINE_ITEM_FROM} WHERE ${where}`,
     params
   );
 
-  return rows;
-}
+  const selectSql = `
+    SELECT
+      oi.order_item_id,
+      o.id AS order_id,
+      o.date_created_gmt AS order_date,
+      COALESCE(inv.calculated_number, CAST(invm.meta_value AS UNSIGNED)) AS invoice_number,
+      oi.order_item_name AS product_name,
+      COALESCE(NULLIF(oim_sku.meta_value, ''), ml.sku, '') AS sku,
+      pm_hsn.meta_value AS hsn,
+      oim_size.meta_value AS size,
+      CAST(oim_qty.meta_value AS DECIMAL(20, 4)) AS quantity,
+      CAST(oim_sub.meta_value AS DECIMAL(20, 4)) AS line_subtotal,
+      CAST(oim_tot.meta_value AS DECIMAL(20, 4)) AS line_total,
+      CAST(oim_tax.meta_value AS DECIMAL(20, 4)) AS line_tax,
+      CAST(oim_tot.meta_value AS DECIMAL(20, 4)) AS line_total_num,
+      CAST(oim_tax.meta_value AS DECIMAL(20, 4)) AS line_tax_num
+    ${LINE_ITEM_FROM}
+    WHERE ${where}
+    ORDER BY ${sort.col} ${sort.dir}, oi.order_item_id DESC
+  `;
 
-function buildRow(product, rowData, gstPercent) {
-  const sellingPrice = resolvePrice(
-    rowData.regular_price,
-    rowData.sale_price,
-    rowData.price
-  );
-  const amounts = splitInclusive(sellingPrice, gstPercent);
+  let rows;
+  if (pagination) {
+    const [result] = await pool.query(
+      `${selectSql} LIMIT ? OFFSET ?`,
+      [...params, pagination.limit, pagination.offset]
+    );
+    rows = result;
+  } else {
+    const [result] = await pool.query(selectSql, params);
+    rows = result;
+  }
+
+  const orderIds = [...new Set(rows.map((row) => Number(row.order_id)).filter(Boolean))];
+  const orderTaxMap = await fetchOrderTaxMap(orderIds);
 
   return {
-    product_name: product.name,
-    sku: rowData.sku || product.sku || '',
-    variant_label: rowData.variant_label || '—',
-    price: amounts.price,
-    gst: amounts.gst,
-    total: amounts.total,
+    total: Number(total) || 0,
+    rows: rows.map((row) => mapLineRow(row, orderTaxMap)),
   };
 }
 
 async function getGstReport(req) {
+  const range = resolveInventoryPeriod(req.query);
   const search = (req.query.search || '').trim();
-  const sort = SORT_HANDLERS[req.query.sort] ? req.query.sort : 'name_asc';
+  const sort = resolveSort(req);
+  const { page, limit, offset } = parseList(req, {}, 'newest');
+  const availableYears = await getAvailableYears();
 
-  const products = await fetchProducts(search);
-  const productIds = products.map((product) => Number(product.id));
-
-  const [metaMap, typeMap, variations] = await Promise.all([
-    fetchProductMetaMap(productIds),
-    fetchProductTypes(productIds),
-    fetchVariations(productIds, search),
-  ]);
-
-  const variationsByProduct = new Map();
-  for (const variation of variations) {
-    const productId = Number(variation.product_id);
-    if (!variationsByProduct.has(productId)) {
-      variationsByProduct.set(productId, []);
-    }
-    variationsByProduct.get(productId).push(variation);
+  if (!range.start || !range.end) {
+    return {
+      ...listResponse([], 0, page, limit),
+      filter: buildFilterMeta(range),
+      available_years: availableYears,
+    };
   }
 
-  const items = [];
-
-  for (const product of products) {
-    const productId = Number(product.id);
-    const meta = metaMap.get(productId) || {};
-    const gstPercent = resolveGstPercent(meta, product.tax_status);
-    const productType = typeMap.get(productId) || 'simple';
-    const productVariations = variationsByProduct.get(productId) || [];
-
-    if (productType === 'variable' && productVariations.length) {
-      for (const variation of productVariations) {
-        items.push(
-          buildRow(product, {
-            regular_price: variation.regular_price,
-            sale_price: variation.sale_price,
-            price: variation.price,
-            sku: variation.sku,
-            variant_label: buildVariantLabel(variation),
-          }, gstPercent)
-        );
-      }
-      continue;
-    }
-
-    items.push(
-      buildRow(product, {
-        regular_price: meta._regular_price,
-        sale_price: meta._sale_price,
-        price: meta._price,
-        sku: product.sku,
-        variant_label: '—',
-      }, gstPercent)
-    );
-  }
-
-  items.sort(SORT_HANDLERS[sort]);
+  const { total, rows } = await fetchLineRows(range, search, sort, {
+    limit,
+    offset,
+  });
 
   return {
-    items,
-    counts: {
-      products: products.length,
-      variants: items.length,
-    },
+    ...listResponse(rows, total, page, limit),
+    filter: buildFilterMeta(range),
+    available_years: availableYears,
   };
 }
 
-module.exports = { getGstReport };
+async function getGstExport(req) {
+  const range = resolveInventoryPeriod(req.query);
+  const search = (req.query.search || '').trim();
+  const sort = resolveSort(req);
+
+  if (!range.start || !range.end) {
+    return {
+      filter: buildFilterMeta(range),
+      data: [],
+    };
+  }
+
+  const { rows } = await fetchLineRows(range, search, sort);
+
+  return {
+    filter: buildFilterMeta(range),
+    data: rows,
+  };
+}
+
+module.exports = { getGstReport, getGstExport };

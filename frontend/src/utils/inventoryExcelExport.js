@@ -18,6 +18,7 @@ const MONTH_NAMES = [
 const PERIOD_LABELS = {
   today: 'Today',
   date: 'Date',
+  range: 'Date Range',
   week: 'This Week',
   month: 'Month',
   year: 'Year',
@@ -42,10 +43,22 @@ function getWeekRangeIso() {
   return { start: formatIsoDate(monday), end: formatIsoDate(sunday) };
 }
 
-function buildFilename({ period, filter, selectedDate, selectedYear, selectedMonth, yearFilter }) {
+function buildFilename({ period, filter, selectedDate,dateFrom,
+  dateTo, selectedYear, selectedMonth, yearFilter }) {
   switch (period) {
     case 'date':
       return `inventory-date-${filter?.date || selectedDate}.xlsx`;
+    case 'range': {
+    const from =
+      filter?.date_from ||
+      dateFrom;
+
+    const to =
+      filter?.date_to ||
+      dateTo;
+
+    return `inventory-${from}-to-${to}.xlsx`;
+  }
     case 'month': {
       const year = filter?.year || selectedYear;
       const month = filter?.month || selectedMonth;
@@ -64,12 +77,24 @@ function buildFilename({ period, filter, selectedDate, selectedYear, selectedMon
   }
 }
 
-function buildFilterRows({ period, filter, selectedDate, selectedYear, selectedMonth, yearFilter }) {
+function buildFilterRows({ period, filter, selectedDate, dateFrom,
+  dateTo, selectedYear, selectedMonth, yearFilter }) {
   const rows = [['Period:', PERIOD_LABELS[period] || period]];
 
   if (period === 'date') {
     rows.push(['Selected Date:', filter?.date || selectedDate]);
-  } else if (period === 'month') {
+  } else if (period === 'range') {
+  const from =
+    filter?.date_from ||
+    dateFrom;
+
+  const to =
+    filter?.date_to ||
+    dateTo;
+
+  rows.push(['From Date:', from]);
+  rows.push(['To Date:', to]);
+}else if (period === 'month') {
     const year = filter?.year || selectedYear;
     const month = filter?.month || selectedMonth;
     rows.push(['Year:', year]);
@@ -103,6 +128,8 @@ export async function downloadInventoryExcel({
   products = [],
   period,
   selectedDate,
+  dateFrom,
+  dateTo,
   selectedYear,
   selectedMonth,
   yearFilter,
@@ -128,6 +155,8 @@ export async function downloadInventoryExcel({
     period,
     filter,
     selectedDate,
+    dateFrom,
+  dateTo,
     selectedYear,
     selectedMonth,
     yearFilter,
@@ -249,6 +278,8 @@ export async function downloadInventoryExcel({
     period,
     filter,
     selectedDate,
+    dateFrom,
+dateTo,
     selectedYear,
     selectedMonth,
     yearFilter,

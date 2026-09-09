@@ -33,6 +33,7 @@ import { formatCurrency, formatNumber } from '../utils/format';
 const PERIOD_OPTIONS = [
   { value: 'today', label: 'Today' },
   { value: 'date', label: 'Date' },
+  { value: 'range', label: 'Date Range' },
   { value: 'week', label: 'This Week' },
   { value: 'month', label: 'Month' },
   { value: 'year', label: 'Year' },
@@ -156,6 +157,10 @@ export default function Inventory() {
   const { showToast } = useSnackbar();
   const [period, setPeriod] = useState('today');
   const [selectedDate, setSelectedDate] = useState(todayIsoDate());
+
+  const [dateFrom, setDateFrom] = useState(todayIsoDate());
+const [dateTo, setDateTo] = useState(todayIsoDate());
+
   const [selectedYear, setSelectedYear] = useState(now.getFullYear());
   const [selectedMonth, setSelectedMonth] = useState(now.getMonth() + 1);
   const [yearFilter, setYearFilter] = useState(now.getFullYear());
@@ -173,28 +178,37 @@ export default function Inventory() {
 
   const debouncedSearch = useDebounce(search, 350);
 
-  const filterParams = useMemo(() => {
-    const params = { period, sort, search: debouncedSearch || undefined };
-
-    if (period === 'date') {
-      params.date = selectedDate;
-    } else if (period === 'month') {
-      params.year = selectedYear;
-      params.month = selectedMonth;
-    } else if (period === 'year') {
-      params.year = yearFilter;
-    }
-
-    return params;
-  }, [
+const filterParams = useMemo(() => {
+  const params = {
     period,
     sort,
-    debouncedSearch,
-    selectedDate,
-    selectedYear,
-    selectedMonth,
-    yearFilter,
-  ]);
+    search: debouncedSearch || undefined,
+  };
+
+  if (period === 'date') {
+    params.date = selectedDate;
+  } else if (period === 'range') {
+    params.date_from = dateFrom;
+    params.date_to = dateTo;
+  } else if (period === 'month') {
+    params.year = selectedYear;
+    params.month = selectedMonth;
+  } else if (period === 'year') {
+    params.year = yearFilter;
+  }
+
+  return params;
+}, [
+  period,
+  sort,
+  debouncedSearch,
+  selectedDate,
+  dateFrom,
+  dateTo,
+  selectedYear,
+  selectedMonth,
+  yearFilter,
+]);
 
   const load = useCallback(() => {
     setState((s) => ({ ...s, loading: true, error: null }));
@@ -247,12 +261,14 @@ export default function Inventory() {
 
     setDownloading(true);
     try {
-      await downloadInventoryExcel({
+     await downloadInventoryExcel({
         filter: state.filter,
         summary: state.summary,
         products: state.products,
         period,
         selectedDate,
+        dateFrom,
+        dateTo,
         selectedYear,
         selectedMonth,
         yearFilter,
@@ -307,6 +323,43 @@ export default function Inventory() {
             sx={{ maxWidth: 220 }}
           />
         )}
+
+        {period === 'range' && (
+  <Stack
+    direction={{ xs: 'column', sm: 'row' }}
+    spacing={1.5}
+  >
+    <TextField
+      type="date"
+      size="small"
+      label="From Date"
+      value={dateFrom}
+      onChange={(e) => {
+        const value = e.target.value;
+        setDateFrom(value);
+
+        if (dateTo && value > dateTo) {
+          setDateTo(value);
+        }
+      }}
+      InputLabelProps={{ shrink: true }}
+      sx={{ maxWidth: 220 }}
+    />
+
+    <TextField
+      type="date"
+      size="small"
+      label="To Date"
+      value={dateTo}
+      inputProps={{
+        min: dateFrom || undefined,
+      }}
+      onChange={(e) => setDateTo(e.target.value)}
+      InputLabelProps={{ shrink: true }}
+      sx={{ maxWidth: 220 }}
+    />
+  </Stack>
+)}
 
         {period === 'month' && (
           <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1.5}>

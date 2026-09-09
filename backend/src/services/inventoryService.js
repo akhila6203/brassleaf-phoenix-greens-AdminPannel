@@ -129,6 +129,10 @@ function buildFilterMeta(range) {
   const filter = { period: range.period, label: range.label };
 
   if (range.date) filter.date = range.date;
+
+  if (range.date_from) filter.date_from = range.date_from;
+if (range.date_to) filter.date_to = range.date_to;
+
   if (range.year != null) filter.year = range.year;
   if (range.month != null) filter.month = range.month;
 

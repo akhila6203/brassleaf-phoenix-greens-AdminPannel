@@ -14,6 +14,46 @@ const SORT = {
   id: 'p.id',
 };
 
+
+function getDateRangeFilters(req) {
+  const dateFrom =
+    String(
+      req?.query?.date_from || ''
+    ).trim();
+
+  const dateTo =
+    String(
+      req?.query?.date_to || ''
+    ).trim();
+
+  const isValidDate = (value) =>
+    /^\d{4}-\d{2}-\d{2}$/.test(value);
+
+  if (
+    !dateFrom ||
+    !dateTo ||
+    !isValidDate(dateFrom) ||
+    !isValidDate(dateTo)
+  ) {
+    return {
+      dateFrom: null,
+      dateTo: null,
+    };
+  }
+
+  if (dateFrom > dateTo) {
+    return {
+      dateFrom: null,
+      dateTo: null,
+    };
+  }
+
+  return {
+    dateFrom,
+    dateTo,
+  };
+}
+
 /** Safe gateway fields from paytm_response JSON (no secrets/card data). */
 function parsePaytmResponse(raw) {
   if (!raw) return { gateway: {}, raw: null };
@@ -118,50 +158,76 @@ function shapePaymentRow(row) {
   };
 }
 
-// async function statsSummary() {
-//   const [[summary]] = await pool.query(
-//     `SELECT
-//        COUNT(*) AS total_transactions,
-//        SUM(CASE WHEN p.status = '1' THEN 1 ELSE 0 END) AS successful,
-//        SUM(CASE WHEN p.status = '0' THEN 1 ELSE 0 END) AS failed_or_pending,
-//        ROUND(SUM(CASE WHEN p.status = '1' THEN o.total_amount ELSE 0 END), 2) AS total_collected
-//      FROM ${P}paytm_order_data p
-//      JOIN ${P}wc_orders o ON o.id = p.order_id`
-//   );
+async function statsSummary(req) {
+  const {
+    dateFrom,
+    dateTo,
+  } = getDateRangeFilters(req);
 
-//   const [byMonth] = await pool.query(
-//     `SELECT
-//        DATE_FORMAT(p.date_added, '%Y-%m') AS month,
-//        COUNT(*) AS transactions,
-//        ROUND(SUM(o.total_amount), 2) AS revenue
-//      FROM ${P}paytm_order_data p
-//      JOIN ${P}wc_orders o ON o.id = p.order_id
-//      WHERE p.status = '1'
-//      GROUP BY month
-//      ORDER BY month DESC
-//      LIMIT 12`
-//   );
+  const params = [];
 
-//   return {
-//     ...summary,
-//     summary,
-//     byMonth,
-//   };
-// }
-async function statsSummary() {
+  let dateWhere = '';
+
+  if (dateFrom && dateTo) {
+    dateWhere = `
+      AND p.date_added >= ?
+      AND p.date_added < DATE_ADD(?, INTERVAL 1 DAY)
+    `;
+
+    params.push(
+      `${dateFrom} 00:00:00`,
+      dateTo
+    );
+  }
+
   const [[summary]] =
     await pool.query(
       `
       SELECT
+
         COUNT(*) AS total_transactions,
 
-        COUNT(*) AS successful,
+        SUM(
+          CASE
+            WHEN
+              p.status = '1'
+              AND o.status IN (
+                'wc-processing',
+                'wc-completed'
+              )
+            THEN 1
+            ELSE 0
+          END
+        ) AS successful,
 
-        0 AS failed_or_pending,
+        SUM(
+          CASE
+            WHEN NOT (
+              p.status = '1'
+              AND o.status IN (
+                'wc-processing',
+                'wc-completed'
+              )
+            )
+            THEN 1
+            ELSE 0
+          END
+        ) AS failed_or_pending,
 
         ROUND(
           COALESCE(
-            SUM(o.total_amount),
+            SUM(
+              CASE
+                WHEN
+                  p.status = '1'
+                  AND o.status IN (
+                    'wc-processing',
+                    'wc-completed'
+                  )
+                THEN o.total_amount
+                ELSE 0
+              END
+            ),
             0
           ),
           2
@@ -172,68 +238,117 @@ async function statsSummary() {
       JOIN ${P}wc_orders o
         ON o.id = p.order_id
 
-      WHERE
-        p.status = '1'
-        AND o.status IN (
-          'wc-processing',
-          'wc-completed'
-        )
-      `
-    );
+      WHERE 1 = 1
 
-  const [byMonth] =
-    await pool.query(
-      `
-      SELECT
-        DATE_FORMAT(
-          p.date_added,
-          '%Y-%m'
-        ) AS month,
-
-        COUNT(*) AS transactions,
-
-        ROUND(
-          SUM(o.total_amount),
-          2
-        ) AS revenue
-
-      FROM ${P}paytm_order_data p
-
-      JOIN ${P}wc_orders o
-        ON o.id = p.order_id
-
-      WHERE
-        p.status = '1'
-        AND o.status IN (
-          'wc-processing',
-          'wc-completed'
-        )
-
-      GROUP BY month
-      ORDER BY month DESC
-      LIMIT 12
-      `
+      ${dateWhere}
+      `,
+      params
     );
 
   return {
-    ...summary,
-    summary,
-    byMonth,
+    total_transactions:
+      Number(
+        summary.total_transactions
+      ) || 0,
+
+    successful:
+      Number(
+        summary.successful
+      ) || 0,
+
+    failed_or_pending:
+      Number(
+        summary.failed_or_pending
+      ) || 0,
+
+    total_collected:
+      Number(
+        summary.total_collected
+      ) || 0,
   };
 }
+// async function statsSummary() {
+//   const [[summary]] =
+//     await pool.query(
+//       `
+//       SELECT
+//         COUNT(*) AS total_transactions,
+
+//         COUNT(*) AS successful,
+
+//         0 AS failed_or_pending,
+
+//         ROUND(
+//           COALESCE(
+//             SUM(o.total_amount),
+//             0
+//           ),
+//           2
+//         ) AS total_collected
+
+//       FROM ${P}paytm_order_data p
+
+//       JOIN ${P}wc_orders o
+//         ON o.id = p.order_id
+
+//       WHERE
+//         p.status = '1'
+//         AND o.status IN (
+//           'wc-processing',
+//           'wc-completed'
+//         )
+//       `
+//     );
+
+//   const [byMonth] =
+//     await pool.query(
+//       `
+//       SELECT
+//         DATE_FORMAT(
+//           p.date_added,
+//           '%Y-%m'
+//         ) AS month,
+
+//         COUNT(*) AS transactions,
+
+//         ROUND(
+//           SUM(o.total_amount),
+//           2
+//         ) AS revenue
+
+//       FROM ${P}paytm_order_data p
+
+//       JOIN ${P}wc_orders o
+//         ON o.id = p.order_id
+
+//       WHERE
+//         p.status = '1'
+//         AND o.status IN (
+//           'wc-processing',
+//           'wc-completed'
+//         )
+
+//       GROUP BY month
+//       ORDER BY month DESC
+//       LIMIT 12
+//       `
+//     );
+
+//   return {
+//     ...summary,
+//     summary,
+//     byMonth,
+//   };
+// }
 
 async function list(req) {
   const { page, limit, offset, sortCol, dir, search } = parseList(req, SORT, 'date');
   const status = req.query.status;
-  // const params = [];
-  // let where = '1=1';
-
-  // if (status === '0' || status === '1') {
-  //   where += ` AND p.status = ?`;
-  //   params.push(status);
-  // }
   const params = [];
-
+const {
+  dateFrom,
+  dateTo,
+} = getDateRangeFilters(req);
 /*
  * Admin Payments page:
  * show only successful Paytm payments.
@@ -249,6 +364,17 @@ let where = `
     'wc-completed'
   )
 `;
+if (dateFrom && dateTo) {
+  where += `
+    AND p.date_added >= ?
+    AND p.date_added < DATE_ADD(?, INTERVAL 1 DAY)
+  `;
+
+  params.push(
+    `${dateFrom} 00:00:00`,
+    dateTo
+  );
+}
   if (search) {
     where += ` AND (
       p.paytm_order_id LIKE ? OR p.transaction_id LIKE ? OR o.billing_email LIKE ?
@@ -408,6 +534,8 @@ module.exports = { list, getById, getByOrderId, statsSummary, reconcile, parsePa
 
 
 
+
+
 // const pool = require('../config/db');
 // const P = require('../config/prefix');
 // const { parseList, listResponse } = require('../utils/listParams');
@@ -528,29 +656,102 @@ module.exports = { list, getById, getByOrderId, statsSummary, reconcile, parsePa
 //   };
 // }
 
-// async function statsSummary() {
-//   const [[summary]] = await pool.query(
-//     `SELECT
-//        COUNT(*) AS total_transactions,
-//        SUM(CASE WHEN p.status = '1' THEN 1 ELSE 0 END) AS successful,
-//        SUM(CASE WHEN p.status = '0' THEN 1 ELSE 0 END) AS failed_or_pending,
-//        ROUND(SUM(CASE WHEN p.status = '1' THEN o.total_amount ELSE 0 END), 2) AS total_collected
-//      FROM ${P}paytm_order_data p
-//      JOIN ${P}wc_orders o ON o.id = p.order_id`
-//   );
+// // async function statsSummary() {
+// //   const [[summary]] = await pool.query(
+// //     `SELECT
+// //        COUNT(*) AS total_transactions,
+// //        SUM(CASE WHEN p.status = '1' THEN 1 ELSE 0 END) AS successful,
+// //        SUM(CASE WHEN p.status = '0' THEN 1 ELSE 0 END) AS failed_or_pending,
+// //        ROUND(SUM(CASE WHEN p.status = '1' THEN o.total_amount ELSE 0 END), 2) AS total_collected
+// //      FROM ${P}paytm_order_data p
+// //      JOIN ${P}wc_orders o ON o.id = p.order_id`
+// //   );
 
-//   const [byMonth] = await pool.query(
-//     `SELECT
-//        DATE_FORMAT(p.date_added, '%Y-%m') AS month,
-//        COUNT(*) AS transactions,
-//        ROUND(SUM(o.total_amount), 2) AS revenue
-//      FROM ${P}paytm_order_data p
-//      JOIN ${P}wc_orders o ON o.id = p.order_id
-//      WHERE p.status = '1'
-//      GROUP BY month
-//      ORDER BY month DESC
-//      LIMIT 12`
-//   );
+// //   const [byMonth] = await pool.query(
+// //     `SELECT
+// //        DATE_FORMAT(p.date_added, '%Y-%m') AS month,
+// //        COUNT(*) AS transactions,
+// //        ROUND(SUM(o.total_amount), 2) AS revenue
+// //      FROM ${P}paytm_order_data p
+// //      JOIN ${P}wc_orders o ON o.id = p.order_id
+// //      WHERE p.status = '1'
+// //      GROUP BY month
+// //      ORDER BY month DESC
+// //      LIMIT 12`
+// //   );
+
+// //   return {
+// //     ...summary,
+// //     summary,
+// //     byMonth,
+// //   };
+// // }
+// async function statsSummary() {
+//   const [[summary]] =
+//     await pool.query(
+//       `
+//       SELECT
+//         COUNT(*) AS total_transactions,
+
+//         COUNT(*) AS successful,
+
+//         0 AS failed_or_pending,
+
+//         ROUND(
+//           COALESCE(
+//             SUM(o.total_amount),
+//             0
+//           ),
+//           2
+//         ) AS total_collected
+
+//       FROM ${P}paytm_order_data p
+
+//       JOIN ${P}wc_orders o
+//         ON o.id = p.order_id
+
+//       WHERE
+//         p.status = '1'
+//         AND o.status IN (
+//           'wc-processing',
+//           'wc-completed'
+//         )
+//       `
+//     );
+
+//   const [byMonth] =
+//     await pool.query(
+//       `
+//       SELECT
+//         DATE_FORMAT(
+//           p.date_added,
+//           '%Y-%m'
+//         ) AS month,
+
+//         COUNT(*) AS transactions,
+
+//         ROUND(
+//           SUM(o.total_amount),
+//           2
+//         ) AS revenue
+
+//       FROM ${P}paytm_order_data p
+
+//       JOIN ${P}wc_orders o
+//         ON o.id = p.order_id
+
+//       WHERE
+//         p.status = '1'
+//         AND o.status IN (
+//           'wc-processing',
+//           'wc-completed'
+//         )
+
+//       GROUP BY month
+//       ORDER BY month DESC
+//       LIMIT 12
+//       `
+//     );
 
 //   return {
 //     ...summary,
@@ -562,13 +763,30 @@ module.exports = { list, getById, getByOrderId, statsSummary, reconcile, parsePa
 // async function list(req) {
 //   const { page, limit, offset, sortCol, dir, search } = parseList(req, SORT, 'date');
 //   const status = req.query.status;
-//   const params = [];
-//   let where = '1=1';
+//   // const params = [];
+//   // let where = '1=1';
 
-//   if (status === '0' || status === '1') {
-//     where += ` AND p.status = ?`;
-//     params.push(status);
-//   }
+//   // if (status === '0' || status === '1') {
+//   //   where += ` AND p.status = ?`;
+//   //   params.push(status);
+//   // }
+//   const params = [];
+
+// /*
+//  * Admin Payments page:
+//  * show only successful Paytm payments.
+//  *
+//  * p.status:
+//  * 0 = pending/failed
+//  * 1 = success
+//  */
+// let where = `
+//   p.status = '1'
+//   AND o.status IN (
+//     'wc-processing',
+//     'wc-completed'
+//   )
+// `;
 //   if (search) {
 //     where += ` AND (
 //       p.paytm_order_id LIKE ? OR p.transaction_id LIKE ? OR o.billing_email LIKE ?
@@ -725,3 +943,5 @@ module.exports = { list, getById, getByOrderId, statsSummary, reconcile, parsePa
 // }
 
 // module.exports = { list, getById, getByOrderId, statsSummary, reconcile, parsePaytmResponse };
+
+

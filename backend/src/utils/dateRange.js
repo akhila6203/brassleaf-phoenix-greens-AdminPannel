@@ -150,6 +150,80 @@ function resolveInventoryPeriod(query = {}) {
       const end = new Date(start.getTime() + 24 * 60 * 60 * 1000 - 1);
       return build(start, end, formatKolkataDate(start), { date: single });
     }
+    case 'range': {
+  const from = query.date_from || query.from;
+  const to = query.date_to || query.to;
+
+  if (!from || !to) {
+    return {
+      period,
+      label: 'Select date range',
+      timezone: TIMEZONE,
+      start: null,
+      end: null,
+      date_from: from || null,
+      date_to: to || null,
+    };
+  }
+
+  const [fy, fm, fd] = String(from).split('-').map(Number);
+  const [ty, tm, td] = String(to).split('-').map(Number);
+
+  if (
+    !fy ||
+    !fm ||
+    !fd ||
+    !ty ||
+    !tm ||
+    !td
+  ) {
+    return {
+      period,
+      label: 'Invalid date range',
+      timezone: TIMEZONE,
+      start: null,
+      end: null,
+      date_from: from,
+      date_to: to,
+    };
+  }
+
+  const start = kolkataMidnightUtc(
+    fy,
+    fm - 1,
+    fd
+  );
+
+  const end = new Date(
+    kolkataMidnightUtc(
+      ty,
+      tm - 1,
+      td + 1
+    ).getTime() - 1
+  );
+
+  if (start.getTime() > end.getTime()) {
+    return {
+      period,
+      label: 'Invalid date range',
+      timezone: TIMEZONE,
+      start: null,
+      end: null,
+      date_from: from,
+      date_to: to,
+    };
+  }
+
+  return build(
+    start,
+    end,
+    `${from} to ${to}`,
+    {
+      date_from: from,
+      date_to: to,
+    }
+  );
+}
     case 'week': {
       const ref = new Date(Date.UTC(today.year, today.month, today.day));
       const dow = ref.getUTCDay();
@@ -205,6 +279,7 @@ module.exports = {
   MONTH_NAMES,
   toKolkataParts,
 };
+
 
 
 
@@ -308,4 +383,112 @@ module.exports = {
 //   };
 // }
 
-// module.exports = { TIMEZONE, resolveDateRange, formatKolkataDate };
+// const MONTH_NAMES = [
+//   'January',
+//   'February',
+//   'March',
+//   'April',
+//   'May',
+//   'June',
+//   'July',
+//   'August',
+//   'September',
+//   'October',
+//   'November',
+//   'December',
+// ];
+
+// function toMysqlDatetime(date) {
+//   return date ? date.toISOString().slice(0, 19).replace('T', ' ') : null;
+// }
+
+// function resolveInventoryPeriod(query = {}) {
+//   const period = query.period || 'today';
+//   const now = new Date();
+//   const today = toKolkataParts(now);
+
+//   const build = (start, end, label, meta = {}) => ({
+//     period,
+//     label,
+//     timezone: TIMEZONE,
+//     start: toMysqlDatetime(start),
+//     end: toMysqlDatetime(end),
+//     startGmt: start,
+//     endGmt: end,
+//     ...meta,
+//   });
+
+//   switch (period) {
+//     case 'date': {
+//       const single = query.date;
+//       if (!single) {
+//         return {
+//           period,
+//           label: 'Select date',
+//           timezone: TIMEZONE,
+//           start: null,
+//           end: null,
+//         };
+//       }
+//       const [y, m, d] = String(single).split('-').map(Number);
+//       const start = kolkataMidnightUtc(y, m - 1, d);
+//       const end = new Date(start.getTime() + 24 * 60 * 60 * 1000 - 1);
+//       return build(start, end, formatKolkataDate(start), { date: single });
+//     }
+//     case 'week': {
+//       const ref = new Date(Date.UTC(today.year, today.month, today.day));
+//       const dow = ref.getUTCDay();
+//       const daysFromMonday = dow === 0 ? 6 : dow - 1;
+//       const mondayMs = ref.getTime() - daysFromMonday * 24 * 60 * 60 * 1000;
+//       const monday = new Date(mondayMs);
+//       const start = kolkataMidnightUtc(
+//         monday.getUTCFullYear(),
+//         monday.getUTCMonth(),
+//         monday.getUTCDate()
+//       );
+//       const sunday = new Date(mondayMs + 6 * 24 * 60 * 60 * 1000);
+//       const end = new Date(
+//         kolkataMidnightUtc(
+//           sunday.getUTCFullYear(),
+//           sunday.getUTCMonth(),
+//           sunday.getUTCDate() + 1
+//         ).getTime() - 1
+//       );
+//       return build(start, end, 'This week');
+//     }
+//     case 'month': {
+//       const year = Number(query.year) || today.year;
+//       const month = Number(query.month) || today.month + 1;
+//       const safeMonth = Math.min(12, Math.max(1, month));
+//       const start = kolkataMidnightUtc(year, safeMonth - 1, 1);
+//       const end = new Date(kolkataMidnightUtc(year, safeMonth, 1).getTime() - 1);
+//       return build(start, end, `${MONTH_NAMES[safeMonth - 1]} ${year}`, {
+//         year,
+//         month: safeMonth,
+//       });
+//     }
+//     case 'year': {
+//       const year = Number(query.year) || today.year;
+//       const start = kolkataMidnightUtc(year, 0, 1);
+//       const end = new Date(kolkataMidnightUtc(year + 1, 0, 1).getTime() - 1);
+//       return build(start, end, String(year), { year });
+//     }
+//     case 'today':
+//     default: {
+//       const start = kolkataMidnightUtc(today.year, today.month, today.day);
+//       const end = new Date(start.getTime() + 24 * 60 * 60 * 1000 - 1);
+//       return build(start, end, `Today · ${formatKolkataDate(start)}`);
+//     }
+//   }
+// }
+
+// module.exports = {
+//   TIMEZONE,
+//   resolveDateRange,
+//   resolveInventoryPeriod,
+//   formatKolkataDate,
+//   MONTH_NAMES,
+//   toKolkataParts,
+// };
+
+

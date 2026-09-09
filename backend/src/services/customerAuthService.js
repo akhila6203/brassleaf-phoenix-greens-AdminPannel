@@ -1260,6 +1260,9 @@ async function getMe(
         meta.billing_last_name ||
         meta.last_name ||
         "",
+       company:
+    meta.billing_company ||
+    "",
 
       email:
         meta.billing_email ||
@@ -1408,6 +1411,10 @@ async function updateMe(
     billing_last_name:
       billing.lastName ??
       lastName,
+
+      billing_company:
+  billing.company ??
+  "",
 
     billing_email:
       billing.email ??

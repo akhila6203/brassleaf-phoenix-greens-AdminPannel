@@ -4,4 +4,8 @@ async function getGstReport(req, res) {
   res.json(await gstService.getGstReport(req));
 }
 
-module.exports = { getGstReport };
+async function getGstExport(req, res) {
+  res.json(await gstService.getGstExport(req));
+}
+
+module.exports = { getGstReport, getGstExport };
