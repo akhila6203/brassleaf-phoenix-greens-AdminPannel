@@ -113,8 +113,10 @@ const absDir =
   const mime = file.mimetype || 'application/octet-stream';
   const local = nowLocal();
   const gmt = nowGmt();
+
   // Local preview URL — existing WP attachments keep their original guid
   const guid = `http://localhost:${env.port}/uploads/${relativeFile}`;
+  // const guid = `${env.apiPublicUrl}/uploads/${relativeFile}`;
 
   const id = await withTransaction(pool, async (conn) => {
     const [result] = await conn.query(

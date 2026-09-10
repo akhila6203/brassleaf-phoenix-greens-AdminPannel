@@ -15,3 +15,10 @@ const pool = mysql.createPool({
 });
 
 module.exports = pool;
+
+
+
+// for image upload in the deployee time
+// UPDATE wpwd_posts
+// SET guid = REPLACE(guid, 'http://localhost:4000', 'https://cornerstone-api.easybizcart.com')
+// WHERE post_type = 'attachment' AND guid LIKE 'http://localhost:4000%';
