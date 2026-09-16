@@ -2,13 +2,13 @@ require('dotenv').config();
 
 module.exports = {
   port: parseInt(process.env.PORT || '4000', 10),
-  // frontendUrl: process.env.FRONTEND_URL || 'http://localhost:5173',
-  frontendUrl: process.env.FRONTEND_URL || 'https://phoenix-greens-admin.brassleaf.store',
+  frontendUrl: process.env.FRONTEND_URL || 'http://localhost:5173',
+  // frontendUrl: process.env.FRONTEND_URL || 'https://phoenix-greens-admin.brassleaf.store',
   customerFrontendUrl:
     process.env.CUSTOMER_FRONTEND_URL ||
     process.env.VITE_CUSTOMER_URL ||
-    // 'http://localhost:5174',
-     'https://phoenix-greens.brassleaf.store',
+    'http://localhost:5174',
+    //  'https://phoenix-greens.brassleaf.store',
   apiPublicUrl:
     process.env.API_PUBLIC_URL ||
     process.env.BACKEND_PUBLIC_URL ||
