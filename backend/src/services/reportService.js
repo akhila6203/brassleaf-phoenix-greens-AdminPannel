@@ -1770,9 +1770,48 @@ async function createCombinedPdfBuffer(
 
 function buildListQuery(req) {
   const { search } = parseList(req, SORT, 'date');
-  const customerIds = parseIdList(req.query.customer_ids || req.query.customer_id);
-  const orderIds = parseIdList(req.query.order_ids);
-  const range = resolveDateRange(req.query);
+
+  const query = req?.query || {};
+
+  const customerIds = parseIdList(
+    query.customer_ids || query.customer_id
+  );
+
+  const orderIds = parseIdList(
+    query.order_ids
+  );
+
+  // Normalize report date parameters before resolving the range.
+  // Supports both snake_case and camelCase without changing
+  // the existing frontend/API contract.
+  const dateQuery = {
+    ...query,
+
+    range:
+      query.range ||
+      query.date_range ||
+      'today',
+
+    date:
+      query.date ||
+      query.select_date ||
+      undefined,
+
+    date_from:
+      query.date_from ||
+      query.dateFrom ||
+      query.from ||
+      undefined,
+
+    date_to:
+      query.date_to ||
+      query.dateTo ||
+      query.to ||
+      undefined,
+  };
+
+  const range = resolveDateRange(dateQuery);
+
   const params = [];
   // let where = `o.type = 'shop_order'`;
   let where = `
@@ -2674,33 +2713,12 @@ module.exports = {
   buildDownload,
   buildDocumentHtml,
   buildPdfForOrder,
-
    sendOrderInvoiceToCustomer,
   emailCustomerInvoices,
   // emailDailyAdmin,
   sendDailyAdminReports,
   resolveOrderIds,
 };
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 
 
